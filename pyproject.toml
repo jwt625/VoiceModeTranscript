@@ -26,23 +26,21 @@ dependencies = [
     # Web Framework
     "Flask==3.0.0",
     "Flask-SocketIO==5.3.6",
-    
     # Audio Processing
     "pyaudio==0.2.14",
     "pydub==0.25.1",
     "numpy==1.24.3",
-    
     # AI/ML
     "openai-whisper==20231117",
     "torch==2.1.0",
     "torchaudio==2.1.0",
     "assemblyai[extras]==0.33.0",
-    
     # Utilities
     "python-socketio==5.10.0",
     "python-engineio>=4.8.0",
     "eventlet==0.33.3",
     "python-dotenv==1.0.0",
+    "openai>=1.93.0",
 ]
 
 [project.optional-dependencies]
