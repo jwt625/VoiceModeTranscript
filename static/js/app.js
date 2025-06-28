@@ -280,6 +280,23 @@ class TranscriptRecorder {
 
         const timeString = timestamp.toLocaleTimeString();
 
+        // Create content based on whether we have raw text
+        let contentHtml = '';
+        if (data.raw_text && data.raw_text !== data.text) {
+            // Show both raw and deduplicated
+            contentHtml = `
+                <div class="transcript-text deduplicated">
+                    <strong>New:</strong> ${data.text}
+                </div>
+                <div class="transcript-text raw">
+                    <strong>Raw:</strong> ${data.raw_text}
+                </div>
+            `;
+        } else {
+            // Show only the text
+            contentHtml = `<div class="transcript-text">${data.text}</div>`;
+        }
+
         entry.innerHTML = `
             <div class="transcript-meta">
                 <span>${data.source === 'microphone' ? '🎤 You' : '🤖 ChatGPT'}</span>
@@ -287,8 +304,9 @@ class TranscriptRecorder {
                 <span class="confidence-indicator ${confidenceClass}">
                     ${Math.round(confidence * 100)}%
                 </span>
+                ${data.is_deduplicated ? '<span class="dedup-indicator">📝</span>' : ''}
             </div>
-            <div class="transcript-text">${data.text}</div>
+            ${contentHtml}
         `;
 
         // Mark as processing initially (will be removed when finalized)
@@ -348,9 +366,21 @@ class TranscriptRecorder {
         confidenceIndicator.className = `confidence-indicator ${confidenceClass}`;
         confidenceIndicator.textContent = `${Math.round(avgConfidence * 100)}%`;
 
-        // Update text content
-        const textElement = this.currentMessage.element.querySelector('.transcript-text');
-        textElement.textContent = this.currentMessage.text;
+        // Update text content - handle both single and dual display
+        const deduplicatedElement = this.currentMessage.element.querySelector('.transcript-text.deduplicated');
+        const rawElement = this.currentMessage.element.querySelector('.transcript-text.raw');
+        const singleElement = this.currentMessage.element.querySelector('.transcript-text:not(.deduplicated):not(.raw)');
+
+        if (deduplicatedElement && rawElement) {
+            // Update dual display
+            deduplicatedElement.innerHTML = `<strong>New:</strong> ${this.currentMessage.text}`;
+            if (data.raw_text) {
+                rawElement.innerHTML = `<strong>Raw:</strong> ${data.raw_text}`;
+            }
+        } else if (singleElement) {
+            // Update single display
+            singleElement.textContent = this.currentMessage.text;
+        }
 
         // Scroll to bottom
         this.transcriptContent.scrollTop = this.transcriptContent.scrollHeight;
