@@ -1,0 +1,129 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voice-mode-transcript"
+version = "0.1.0"
+description = "A real-time transcript recorder for ChatGPT voice conversations"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Voice Mode Transcript Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.9"
+dependencies = [
+    # Web Framework
+    "Flask==3.0.0",
+    "Flask-SocketIO==5.3.6",
+    
+    # Audio Processing
+    "pyaudio==0.2.14",
+    "pydub==0.25.1",
+    "numpy==1.24.3",
+    
+    # AI/ML
+    "openai-whisper==20231117",
+    "torch==2.1.0",
+    "torchaudio==2.1.0",
+    "assemblyai[extras]==0.33.0",
+    
+    # Utilities
+    "python-socketio==5.10.0",
+    "python-engineio>=4.8.0",
+    "eventlet==0.33.3",
+    "python-dotenv==1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/voice-mode-transcript"
+Repository = "https://github.com/your-username/voice-mode-transcript"
+Issues = "https://github.com/your-username/voice-mode-transcript/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | whisper\.cpp
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["src"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+    "venv/",
+    "whisper.cpp/",
+    "audio_samples/",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
