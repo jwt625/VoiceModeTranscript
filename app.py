@@ -206,10 +206,9 @@ def on_audio_chunk(audio_data, source='microphone', audio_level=None, is_transcr
     # Handle transcription processing
     if is_transcription and transcript_processor:
         try:
-            # Process audio chunk with Whisper
+            # Process audio chunk with whisper.cpp
             transcript_result = transcript_processor.process_audio_chunk(
-                audio_data,
-                source=source
+                audio_data
             )
 
             if transcript_result and transcript_result.get('text', '').strip():
