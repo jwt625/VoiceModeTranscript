@@ -153,6 +153,30 @@ def start_recording():
         if recording_state['is_recording']:
             return jsonify({'error': 'Already recording'}), 400
 
+        # Get device selections from request
+        device_data = request.get_json() or {}
+        requested_mic_device = device_data.get('mic_device_id')
+        requested_system_device_raw = device_data.get('system_device_id')
+
+        print(f"🔍 Raw request data: {device_data}")
+        print(f"🔍 Raw system device: {requested_system_device_raw} (type: {type(requested_system_device_raw)})")
+
+        # Handle output device selection (format: "output_X")
+        requested_system_device = None
+        is_output_device = False
+        if requested_system_device_raw:
+            if isinstance(requested_system_device_raw, str) and requested_system_device_raw.startswith('output_'):
+                requested_system_device = int(requested_system_device_raw.replace('output_', ''))
+                is_output_device = True
+                print(f"🎛️ Output device selected for system audio: {requested_system_device}")
+            else:
+                requested_system_device = requested_system_device_raw
+                print(f"🎛️ Input device selected for system audio: {requested_system_device}")
+        else:
+            print("🔍 No system device specified in request")
+
+        print(f"🎛️ Device selection request - Mic: {requested_mic_device}, System: {requested_system_device} ({'output' if is_output_device else 'input'})")
+
         # Initialize processors
         whisper_processor = WhisperStreamProcessor(callback=on_whisper_transcript)
         llm_processor = LLMProcessor(callback=on_llm_result)
@@ -161,26 +185,89 @@ def start_recording():
         audio_capture = AudioCapture()
         audio_capture.callback = on_audio_chunk
 
-        # Try to find and set system audio device (for macOS, look for loopback devices)
+        # Try to find and set audio devices (microphone and system audio)
         try:
             input_devices, output_devices = audio_capture.list_devices()
             print(f"🎧 Found {len(input_devices)} input devices, {len(output_devices)} output devices")
 
-            # Look for system audio/loopback devices
-            system_device_id = None
-            for device_id, device_name in input_devices:
-                device_name_lower = device_name.lower()
-                if any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
-                    system_device_id = device_id
-                    print(f"🔊 Found system audio device: {device_name} (ID: {device_id})")
-                    break
+            # Use requested devices or auto-detect
+            mic_device_id = requested_mic_device
+            system_device_id = requested_system_device
+
+            # Validate requested devices exist
+            available_input_ids = [dev_id for dev_id, _ in input_devices]
+            available_output_ids = [dev_id for dev_id, _ in output_devices]
+
+            if mic_device_id is not None and mic_device_id not in available_input_ids:
+                print(f"⚠️  Requested microphone device {mic_device_id} not found, auto-detecting...")
+                mic_device_id = None
+
+            # Handle system audio device validation
+            if system_device_id is not None:
+                if is_output_device:
+                    # User selected an output device, try to find corresponding input device
+                    if system_device_id not in available_output_ids:
+                        print(f"⚠️  Requested output device {system_device_id} not found, auto-detecting...")
+                        system_device_id = None
+                    else:
+                        # Try to find corresponding input device with same name
+                        output_name = next((name for dev_id, name in output_devices if dev_id == system_device_id), None)
+                        if output_name:
+                            # Look for input device with same name
+                            corresponding_input = next((dev_id for dev_id, name in input_devices if name == output_name), None)
+                            if corresponding_input:
+                                system_device_id = corresponding_input
+                                print(f"🔄 Found corresponding input device for '{output_name}': {system_device_id}")
+                            else:
+                                print(f"⚠️  No corresponding input device found for output '{output_name}', trying loopback...")
+                                system_device_id = None
+                else:
+                    # User selected an input device directly
+                    if system_device_id not in available_input_ids:
+                        print(f"⚠️  Requested system audio input device {system_device_id} not found, auto-detecting...")
+                        system_device_id = None
+
+            # Auto-detect if not specified or invalid
+            if mic_device_id is None:
+                for device_id, device_name in input_devices:
+                    device_name_lower = device_name.lower()
+                    # Prefer AirPods, then any non-loopback device
+                    if 'airpods' in device_name_lower:
+                        mic_device_id = device_id
+                        print(f"🎤 Auto-detected preferred microphone: {device_name} (ID: {device_id})")
+                        break
+                    elif not any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
+                        if mic_device_id is None:  # Only set if not already found
+                            mic_device_id = device_id
+                            print(f"🎤 Auto-detected fallback microphone: {device_name} (ID: {device_id})")
 
             if system_device_id is None:
-                print("⚠️  No system audio loopback device found. System volume monitoring disabled.")
-                print("   To enable system audio capture, install BlackHole or Soundflower")
+                for device_id, device_name in input_devices:
+                    device_name_lower = device_name.lower()
+                    if any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
+                        system_device_id = device_id
+                        print(f"🔊 Auto-detected system audio device: {device_name} (ID: {device_id})")
+                        break
 
-            # Set devices (mic will auto-detect default, system only if found)
-            audio_capture.set_devices(system_device_id=system_device_id)
+            # Print final device selection
+            if mic_device_id is not None:
+                mic_name = next((name for dev_id, name in input_devices if dev_id == mic_device_id), "Unknown")
+                print(f"✅ Using microphone: {mic_name} (ID: {mic_device_id})")
+            else:
+                print("⚠️  No microphone device available")
+
+            if system_device_id is not None:
+                sys_name = next((name for dev_id, name in input_devices if dev_id == system_device_id), "Unknown")
+                print(f"✅ Using system audio: {sys_name} (ID: {system_device_id})")
+            else:
+                print("⚠️  No system audio device available")
+                print("   To enable system audio capture:")
+                print("   1. Install BlackHole: brew install blackhole-2ch")
+                print("   2. Route audio through BlackHole using Multi-Output Device")
+
+            # Set both devices
+            audio_capture.set_devices(mic_device_id=mic_device_id, system_device_id=system_device_id)
+            print(f"🎚️ Audio devices configured - Mic: {mic_device_id}, System: {system_device_id}")
 
         except Exception as e:
             print(f"⚠️  Error setting up audio devices: {e}")
@@ -217,7 +304,7 @@ def start_recording():
 
         # Start audio capture for volume monitoring (separate from whisper.cpp)
         try:
-            audio_capture.start_recording(session_id)
+            audio_capture.start_recording(session_id, callback=on_audio_chunk)
             print("🎚️ Audio level monitoring started")
         except Exception as e:
             print(f"⚠️ Audio level monitoring failed: {e}")
@@ -672,8 +759,18 @@ def on_audio_chunk(audio_data, source='microphone', audio_level=None, is_transcr
         }
         if source == 'microphone':
             level_data['microphone_level'] = audio_level
+            # Console log for microphone levels (show percentage and bar visualization)
+            percentage = audio_level * 100
+            bar_length = int(percentage / 2)  # Scale to 50 chars max
+            bar = "█" * bar_length + "░" * (50 - bar_length)
+            print(f"🎤 Mic Level: {percentage:5.1f}% |{bar}|")
         elif source == 'system':
             level_data['system_level'] = audio_level
+            # Console log for system audio levels (show percentage and bar visualization)
+            percentage = audio_level * 100
+            bar_length = int(percentage / 2)  # Scale to 50 chars max
+            bar = "█" * bar_length + "░" * (50 - bar_length)
+            print(f"🔊 Sys Level: {percentage:5.1f}% |{bar}|")
 
         # Send audio level via SSE queue
         try:

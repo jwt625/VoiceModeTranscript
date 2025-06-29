@@ -31,6 +31,9 @@ class TranscriptRecorder {
         this.setupSSEConnection();
         this.setupKeyboardListeners();
         this.checkMobileCompatibility();
+
+        // Load audio devices on startup
+        this.loadAudioDevices();
     }
     
     initializeElements() {
@@ -47,9 +50,14 @@ class TranscriptRecorder {
         this.sessionIdSpan = document.getElementById('session-id');
         this.durationSpan = document.getElementById('duration');
 
-        // Audio level elements (FIX: Initialize missing elements)
+        // Audio level elements
         this.micLevel = document.getElementById('mic-level');
         this.systemLevel = document.getElementById('system-level');
+
+        // Device selection elements
+        this.micDeviceSelect = document.getElementById('mic-device-select');
+        this.systemDeviceSelect = document.getElementById('system-device-select');
+        this.refreshDevicesBtn = document.getElementById('refresh-devices-btn');
 
         // LLM status elements
         this.llmStatus = document.getElementById('llm-status');
@@ -111,6 +119,11 @@ class TranscriptRecorder {
         if (this.exportProcessedBtn) {
             this.exportProcessedBtn.addEventListener('click', () => this.exportProcessedTranscript());
         }
+
+        // Device selection
+        this.refreshDevicesBtn.addEventListener('click', () => this.loadAudioDevices());
+        this.micDeviceSelect.addEventListener('change', () => this.onDeviceSelectionChange());
+        this.systemDeviceSelect.addEventListener('change', () => this.onDeviceSelectionChange());
 
         // Database inspector
         if (this.databaseBtn) {
@@ -248,11 +261,33 @@ class TranscriptRecorder {
                 }
             }
 
+            // Prepare device selection data - read directly from dropdowns
+            const micDeviceId = this.micDeviceSelect.value;
+            const systemDeviceId = this.systemDeviceSelect.value;
+
+            console.log('🔍 Current dropdown values - Mic:', micDeviceId, 'System:', systemDeviceId);
+
+            const deviceData = {};
+            if (micDeviceId) {
+                deviceData.mic_device_id = parseInt(micDeviceId);
+            }
+            if (systemDeviceId) {
+                // Don't parse output device IDs (they're strings like "output_3")
+                if (systemDeviceId.startsWith('output_')) {
+                    deviceData.system_device_id = systemDeviceId;
+                } else {
+                    deviceData.system_device_id = parseInt(systemDeviceId);
+                }
+            }
+
+            console.log('🔍 Device data being sent:', deviceData);
+
             const response = await fetch('/api/start', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify(deviceData)
             });
 
             const result = await response.json();
@@ -1293,6 +1328,124 @@ class TranscriptRecorder {
                 warningDiv.remove();
             }
         }, 15000);
+    }
+
+    // Device Management Methods
+    async loadAudioDevices() {
+        console.log('🔄 Loading audio devices...');
+
+        try {
+            const response = await fetch('/api/audio-devices');
+            const data = await response.json();
+
+            if (data.success) {
+                this.populateDeviceDropdowns(data.input_devices, data.output_devices);
+                console.log('✅ Audio devices loaded successfully');
+            } else {
+                console.error('❌ Failed to load audio devices:', data.error);
+                this.showErrorMessage('Failed to load audio devices: ' + data.error);
+            }
+        } catch (error) {
+            console.error('❌ Error loading audio devices:', error);
+            this.showErrorMessage('Error loading audio devices: ' + error.message);
+        }
+    }
+
+    populateDeviceDropdowns(inputDevices, outputDevices) {
+        // Clear existing options
+        this.micDeviceSelect.innerHTML = '';
+        this.systemDeviceSelect.innerHTML = '';
+
+        // Add default option for microphone
+        const micDefaultOption = document.createElement('option');
+        micDefaultOption.value = '';
+        micDefaultOption.textContent = 'Auto-detect microphone';
+        this.micDeviceSelect.appendChild(micDefaultOption);
+
+        // Populate microphone devices (input devices)
+        inputDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.id;
+            option.textContent = device.name;
+
+            // Auto-select AirPods Pro if available
+            if (device.name.toLowerCase().includes('airpods')) {
+                option.selected = true;
+            }
+
+            this.micDeviceSelect.appendChild(option);
+        });
+
+        // Add default option for system audio
+        const sysDefaultOption = document.createElement('option');
+        sysDefaultOption.value = '';
+        sysDefaultOption.textContent = 'No system audio capture';
+        this.systemDeviceSelect.appendChild(sysDefaultOption);
+
+        // Populate system audio devices - include both loopback devices AND output devices
+
+        // First, add loopback devices from input devices
+        inputDevices.forEach(device => {
+            const deviceName = device.name.toLowerCase();
+            if (deviceName.includes('blackhole') || deviceName.includes('soundflower') || deviceName.includes('loopback')) {
+                const option = document.createElement('option');
+                option.value = device.id;
+                option.textContent = `${device.name} (Loopback Input)`;
+
+                // Auto-select BlackHole if available
+                if (deviceName.includes('blackhole')) {
+                    option.selected = true;
+                }
+
+                this.systemDeviceSelect.appendChild(option);
+            }
+        });
+
+        // Add separator if we have loopback devices
+        const hasLoopbackDevices = inputDevices.some(device => {
+            const deviceName = device.name.toLowerCase();
+            return deviceName.includes('blackhole') || deviceName.includes('soundflower') || deviceName.includes('loopback');
+        });
+
+        if (hasLoopbackDevices && outputDevices.length > 0) {
+            const separator = document.createElement('option');
+            separator.disabled = true;
+            separator.textContent = '--- Direct Output Capture ---';
+            this.systemDeviceSelect.appendChild(separator);
+        }
+
+        // Add output devices as system audio sources (for direct capture)
+        outputDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = `output_${device.id}`;
+            option.textContent = `${device.name} (Direct Output)`;
+
+            // Auto-select AirPods Pro if no loopback device was selected
+            const deviceName = device.name.toLowerCase();
+            if (deviceName.includes('airpods') && !this.systemDeviceSelect.querySelector('option[selected]')) {
+                option.selected = true;
+            }
+
+            this.systemDeviceSelect.appendChild(option);
+        });
+
+        console.log(`📱 Populated ${inputDevices.length} input devices and ${outputDevices.length} output devices`);
+    }
+
+    onDeviceSelectionChange() {
+        const micDeviceId = this.micDeviceSelect.value;
+        const systemDeviceId = this.systemDeviceSelect.value;
+
+        console.log(`🎛️ Device selection changed - Mic: ${micDeviceId || 'auto'}, System: ${systemDeviceId || 'none'}`);
+
+        // Store selections for next recording session
+        this.selectedMicDevice = micDeviceId || null;
+        this.selectedSystemDevice = systemDeviceId || null;
+
+        // If recording is active, show message that changes will apply to next session
+        if (this.isRecording) {
+            this.showSuccessMessage('Device changes will apply to the next recording session');
+        }
     }
 }
 

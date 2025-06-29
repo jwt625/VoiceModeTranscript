@@ -55,6 +55,22 @@
             </div>
         </div>
 
+        <div class="device-selection">
+            <div class="device-selector">
+                <label for="mic-device-select">🎤 Microphone Device:</label>
+                <select id="mic-device-select" class="device-dropdown">
+                    <option value="">Loading devices...</option>
+                </select>
+            </div>
+            <div class="device-selector">
+                <label for="system-device-select">🔊 System Audio Device:</label>
+                <select id="system-device-select" class="device-dropdown">
+                    <option value="">Loading devices...</option>
+                </select>
+            </div>
+            <button id="refresh-devices-btn" class="btn btn-secondary">🔄 Refresh Devices</button>
+        </div>
+
         <div class="dual-transcript-container">
             <!-- Raw Transcripts Panel -->
             <div class="transcript-panel raw-panel">
