@@ -25,7 +25,18 @@
         <div class="controls">
             <button id="start-btn" class="btn btn-start">🎤 Start Recording</button>
             <button id="stop-btn" class="btn btn-stop" disabled>⏹️ Stop Recording</button>
+            <button id="process-llm-btn" class="btn btn-llm" disabled>🤖 Process with LLM</button>
             <button id="clear-btn" class="btn btn-clear">🗑️ Clear Transcript</button>
+        </div>
+
+        <div class="llm-status" id="llm-status" style="display: none;">
+            <div class="status-message">
+                <span id="llm-status-text">Ready</span>
+                <div class="loading-spinner" id="llm-spinner" style="display: none;"></div>
+            </div>
+            <div class="accumulated-count">
+                Raw transcripts: <span id="accumulated-count">0</span>
+            </div>
         </div>
 
         <div class="audio-levels">
@@ -43,43 +54,77 @@
             </div>
         </div>
 
-        <div class="transcript-container">
-            <div class="transcript-header">
-                <h2>Live Transcript</h2>
-                <div class="transcript-stats">
-                    <span>Segments: <span id="segment-count">0</span></span>
-                    <span>Words: <span id="word-count">0</span></span>
+        <div class="dual-transcript-container">
+            <!-- Raw Transcripts Panel -->
+            <div class="transcript-panel raw-panel">
+                <div class="panel-header">
+                    <h2>📝 Raw Transcripts</h2>
+                    <div class="panel-controls">
+                        <button id="toggle-raw-btn" class="btn btn-toggle">👁️ Hide</button>
+                        <span class="transcript-count">Count: <span id="raw-count">0</span></span>
+                    </div>
+                </div>
+
+                <div class="transcript-content" id="raw-transcript-content">
+                    <div class="transcript-placeholder">
+                        <p>🎙️ Click "Start Recording" to begin capturing raw transcripts from whisper.cpp</p>
+                        <p>Raw transcripts will appear here as they are generated...</p>
+                    </div>
                 </div>
             </div>
-            
-            <div class="transcript-content" id="transcript-content">
-                <div class="transcript-placeholder">
-                    <p>🎙️ Click "Start Recording" to begin transcribing your ChatGPT conversation</p>
-                    <p>Make sure you have:</p>
-                    <ul>
-                        <li>✅ Microphone connected and permissions granted</li>
-                        <li>✅ System audio routing configured (see AUDIO_SETUP.md)</li>
-                        <li>✅ ChatGPT voice mode ready</li>
-                    </ul>
+
+            <!-- Processed Transcripts Panel -->
+            <div class="transcript-panel processed-panel">
+                <div class="panel-header">
+                    <h2>✨ Processed Transcripts</h2>
+                    <div class="panel-controls">
+                        <button id="toggle-processed-btn" class="btn btn-toggle">👁️ Hide</button>
+                        <span class="transcript-count">Count: <span id="processed-count">0</span></span>
+                    </div>
+                </div>
+
+                <div class="transcript-content" id="processed-transcript-content">
+                    <div class="transcript-placeholder">
+                        <p>🤖 Processed transcripts from LLM will appear here</p>
+                        <p>Press "Process with LLM" or Enter key to clean and deduplicate accumulated raw transcripts</p>
+                    </div>
+                </div>
+
+                <div class="processed-actions" style="display: none;">
+                    <button id="save-processed-btn" class="btn btn-save">💾 Save to Database</button>
+                    <button id="export-processed-btn" class="btn btn-export">📤 Export</button>
                 </div>
             </div>
         </div>
 
         <div class="quality-monitor">
-            <h3>Quality Monitor</h3>
+            <h3>📊 Processing Monitor</h3>
             <div class="quality-metrics">
                 <div class="metric">
-                    <label>Avg Confidence:</label>
-                    <span id="avg-confidence">--</span>
+                    <label>Whisper Status:</label>
+                    <span id="whisper-status">--</span>
                 </div>
                 <div class="metric">
-                    <label>Processing Delay:</label>
-                    <span id="processing-delay">--</span>
+                    <label>LLM Processing:</label>
+                    <span id="llm-processing-status">--</span>
                 </div>
                 <div class="metric">
-                    <label>Last Save:</label>
-                    <span id="last-save">--</span>
+                    <label>Last LLM Process:</label>
+                    <span id="last-llm-process">--</span>
                 </div>
+                <div class="metric">
+                    <label>Session Duration:</label>
+                    <span id="session-duration">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Help -->
+        <div class="keyboard-help">
+            <h4>⌨️ Keyboard Shortcuts</h4>
+            <div class="shortcuts">
+                <span><kbd>Enter</kbd> - Process with LLM</span>
+                <span><kbd>Ctrl+C</kbd> - Stop Recording</span>
             </div>
         </div>
     </div>

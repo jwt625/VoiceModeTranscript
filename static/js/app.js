@@ -1,4 +1,4 @@
-// ChatGPT Voice Mode Transcript Recorder - Frontend JavaScript
+// ChatGPT Voice Mode Transcript Recorder - Frontend JavaScript with Dual Panel Support
 
 class TranscriptRecorder {
     constructor() {
@@ -6,56 +6,107 @@ class TranscriptRecorder {
         this.isRecording = false;
         this.sessionId = null;
         this.startTime = null;
-        this.transcriptEntries = [];
-        this.segmentCount = 0;
-        this.wordCount = 0;
-        this.confidenceSum = 0;
-        this.confidenceCount = 0;
 
-        // Transcript combining state
-        this.currentMessage = null;  // Current message being built
-        this.lastSpeaker = null;     // Last speaker (microphone/system)
-        this.lastUpdateTime = null;  // Time of last transcript update
-        this.combineTimeoutMs = 5000; // Combine chunks within 5 seconds
-        this.combineTimer = null;    // Timer for finalizing messages
+        // Raw transcript management
+        this.rawTranscripts = [];
+        this.rawTranscriptCount = 0;
+
+        // Processed transcript management
+        this.processedTranscripts = [];
+        this.processedTranscriptCount = 0;
+
+        // LLM processing state
+        this.isLLMProcessing = false;
+        this.currentLLMJob = null;
+
+        // Panel visibility state
+        this.rawPanelVisible = true;
+        this.processedPanelVisible = true;
 
         this.initializeElements();
         this.setupEventListeners();
         this.setupSSEConnection();
+        this.setupKeyboardListeners();
     }
     
     initializeElements() {
         // Control buttons
         this.startBtn = document.getElementById('start-btn');
         this.stopBtn = document.getElementById('stop-btn');
+        this.processLLMBtn = document.getElementById('process-llm-btn');
         this.clearBtn = document.getElementById('clear-btn');
-        
+
         // Status elements
         this.statusDot = document.getElementById('status-dot');
         this.statusText = document.getElementById('status-text');
         this.sessionInfo = document.getElementById('session-info');
         this.sessionIdSpan = document.getElementById('session-id');
         this.durationSpan = document.getElementById('duration');
-        
-        // Audio level meters
-        this.micLevel = document.getElementById('mic-level');
-        this.systemLevel = document.getElementById('system-level');
-        
-        // Transcript elements
-        this.transcriptContent = document.getElementById('transcript-content');
-        this.segmentCountSpan = document.getElementById('segment-count');
-        this.wordCountSpan = document.getElementById('word-count');
-        
-        // Quality monitor
-        this.avgConfidenceSpan = document.getElementById('avg-confidence');
+
+        // LLM status elements
+        this.llmStatus = document.getElementById('llm-status');
+        this.llmStatusText = document.getElementById('llm-status-text');
+        this.llmSpinner = document.getElementById('llm-spinner');
+        this.accumulatedCount = document.getElementById('accumulated-count');
+
+        // Dual panel elements
+        this.rawTranscriptContent = document.getElementById('raw-transcript-content');
+        this.processedTranscriptContent = document.getElementById('processed-transcript-content');
+        this.rawCountSpan = document.getElementById('raw-count');
+        this.processedCountSpan = document.getElementById('processed-count');
+
+        // Panel toggle buttons
+        this.toggleRawBtn = document.getElementById('toggle-raw-btn');
+        this.toggleProcessedBtn = document.getElementById('toggle-processed-btn');
+
+        // Processed actions
+        this.saveProcessedBtn = document.getElementById('save-processed-btn');
+        this.exportProcessedBtn = document.getElementById('export-processed-btn');
+        this.processedActions = document.querySelector('.processed-actions');
+
+        // Quality monitor (updated)
+        this.whisperStatus = document.getElementById('whisper-status');
+        this.llmProcessingStatus = document.getElementById('llm-processing-status');
+        this.lastLLMProcess = document.getElementById('last-llm-process');
+        this.sessionDuration = document.getElementById('session-duration');
         this.processingDelaySpan = document.getElementById('processing-delay');
         this.lastSaveSpan = document.getElementById('last-save');
     }
     
     setupEventListeners() {
+        // Recording controls
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
         this.clearBtn.addEventListener('click', () => this.clearTranscript());
+
+        // LLM processing
+        this.processLLMBtn.addEventListener('click', () => this.processWithLLM());
+
+        // Panel toggles
+        this.toggleRawBtn.addEventListener('click', () => this.toggleRawPanel());
+        this.toggleProcessedBtn.addEventListener('click', () => this.toggleProcessedPanel());
+
+        // Processed transcript actions
+        if (this.saveProcessedBtn) {
+            this.saveProcessedBtn.addEventListener('click', () => this.saveProcessedTranscript());
+        }
+        if (this.exportProcessedBtn) {
+            this.exportProcessedBtn.addEventListener('click', () => this.exportProcessedTranscript());
+        }
+    }
+
+    setupKeyboardListeners() {
+        // Listen for Enter key to trigger LLM processing
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+                // Only trigger if not in an input field
+                if (document.activeElement.tagName !== 'INPUT' &&
+                    document.activeElement.tagName !== 'TEXTAREA') {
+                    event.preventDefault();
+                    this.processWithLLM();
+                }
+            }
+        });
     }
     
     setupSSEConnection() {
@@ -79,15 +130,33 @@ class TranscriptRecorder {
                 console.log('📨 SSE message parsed:', data);
 
                 switch (data.type) {
-                    case 'transcript_update':
-                        console.log('📝 Processing transcript update:', data);
-                        this.addTranscriptEntry(data);
+                    case 'recording_started':
+                        console.log('🎤 Recording started:', data);
+                        this.handleRecordingStarted(data);
                         break;
-                    case 'audio_level':
-                        console.log('🔊 Processing audio level:', data);
-                        console.log('🔊 Microphone level:', data.microphone_level);
-                        console.log('🔊 System level:', data.system_level);
-                        this.updateAudioLevels(data);
+                    case 'recording_stopped':
+                        console.log('🛑 Recording stopped:', data);
+                        this.handleRecordingStopped(data);
+                        break;
+                    case 'raw_transcript':
+                        console.log('📝 Raw transcript received:', data);
+                        this.addRawTranscript(data);
+                        break;
+                    case 'llm_processing_start':
+                        console.log('🤖 LLM processing started:', data);
+                        this.handleLLMProcessingStart(data);
+                        break;
+                    case 'llm_processing_complete':
+                        console.log('✨ LLM processing complete:', data);
+                        this.handleLLMProcessingComplete(data);
+                        break;
+                    case 'llm_processing_error':
+                        console.log('❌ LLM processing error:', data);
+                        this.handleLLMProcessingError(data);
+                        break;
+                    case 'whisper_error':
+                        console.log('❌ Whisper error:', data);
+                        this.handleWhisperError(data);
                         break;
                     case 'heartbeat':
                         console.log('💓 Heartbeat received');
@@ -544,6 +613,288 @@ class TranscriptRecorder {
         setTimeout(() => {
             errorDiv.remove();
         }, 10000);
+    }
+
+    // New methods for dual-panel functionality
+
+    handleRecordingStarted(data) {
+        this.isRecording = true;
+        this.sessionId = data.session_id;
+        this.startTime = new Date();
+
+        this.updateStatus('recording', 'Recording');
+        this.showSessionInfo();
+        this.startDurationTimer();
+
+        // Show LLM status
+        this.llmStatus.style.display = 'block';
+        this.llmStatusText.textContent = 'Ready for transcripts';
+        this.whisperStatus.textContent = 'Running';
+
+        // Enable/disable buttons
+        this.startBtn.disabled = true;
+        this.stopBtn.disabled = false;
+        this.processLLMBtn.disabled = false;
+    }
+
+    handleRecordingStopped(data) {
+        this.isRecording = false;
+        this.sessionId = null;
+        this.startTime = null;
+
+        this.updateStatus('ready', 'Ready');
+        this.hideSessionInfo();
+        this.stopDurationTimer();
+
+        // Update status
+        this.whisperStatus.textContent = 'Stopped';
+        this.llmProcessingStatus.textContent = 'Idle';
+
+        // Enable/disable buttons
+        this.startBtn.disabled = false;
+        this.stopBtn.disabled = true;
+        this.processLLMBtn.disabled = true;
+    }
+
+    addRawTranscript(eventData) {
+        const data = eventData.data;
+        this.rawTranscripts.push(data);
+        this.rawTranscriptCount++;
+
+        // Update count displays
+        this.rawCountSpan.textContent = this.rawTranscriptCount;
+        this.accumulatedCount.textContent = eventData.accumulated_count || this.rawTranscriptCount;
+
+        // Clear placeholder if it exists
+        this.clearRawTranscriptPlaceholder();
+
+        // Create transcript item
+        const item = document.createElement('div');
+        item.className = 'raw-transcript-item';
+        item.innerHTML = `
+            <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
+            <div class="text">${data.text}</div>
+            <div class="sequence">#${data.sequence_number}</div>
+        `;
+
+        this.rawTranscriptContent.appendChild(item);
+        this.rawTranscriptContent.scrollTop = this.rawTranscriptContent.scrollHeight;
+
+        // Enable LLM processing button if we have transcripts
+        if (this.rawTranscriptCount > 0 && !this.isLLMProcessing) {
+            this.processLLMBtn.disabled = false;
+        }
+    }
+
+    async processWithLLM() {
+        if (this.isLLMProcessing || this.rawTranscriptCount === 0) {
+            return;
+        }
+
+        try {
+            this.isLLMProcessing = true;
+            this.processLLMBtn.disabled = true;
+            this.llmStatusText.textContent = 'Processing with LLM...';
+            this.llmSpinner.style.display = 'block';
+
+            const response = await fetch('/api/process-llm', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to process with LLM');
+            }
+
+            console.log('🤖 LLM processing started:', result);
+
+        } catch (error) {
+            console.error('❌ Error starting LLM processing:', error);
+            this.showErrorMessage('Failed to start LLM processing: ' + error.message);
+            this.isLLMProcessing = false;
+            this.processLLMBtn.disabled = false;
+            this.llmStatusText.textContent = 'Error';
+            this.llmSpinner.style.display = 'none';
+        }
+    }
+
+    handleLLMProcessingStart(data) {
+        this.currentLLMJob = data.job_id;
+        this.llmProcessingStatus.textContent = `Processing ${data.transcript_count} transcripts`;
+        this.llmStatusText.textContent = `Processing ${data.transcript_count} transcripts...`;
+    }
+
+    handleLLMProcessingComplete(data) {
+        const result = data.result;
+
+        if (result.status === 'success') {
+            this.addProcessedTranscript(result);
+            this.llmStatusText.textContent = 'Processing complete';
+            this.lastLLMProcess.textContent = new Date().toLocaleTimeString();
+        } else {
+            this.llmStatusText.textContent = 'Processing failed';
+            this.showErrorMessage('LLM processing failed: ' + (result.error || 'Unknown error'));
+        }
+
+        // Reset processing state
+        this.isLLMProcessing = false;
+        this.currentLLMJob = null;
+        this.llmSpinner.style.display = 'none';
+        this.llmProcessingStatus.textContent = 'Idle';
+
+        // Re-enable button if we have more transcripts
+        if (this.rawTranscriptCount > 0) {
+            this.processLLMBtn.disabled = false;
+        }
+    }
+
+    handleLLMProcessingError(data) {
+        this.showErrorMessage('LLM processing error: ' + data.error);
+        this.isLLMProcessing = false;
+        this.currentLLMJob = null;
+        this.llmSpinner.style.display = 'none';
+        this.llmStatusText.textContent = 'Error';
+        this.llmProcessingStatus.textContent = 'Error';
+
+        if (this.rawTranscriptCount > 0) {
+            this.processLLMBtn.disabled = false;
+        }
+    }
+
+    handleWhisperError(data) {
+        this.showErrorMessage('Whisper error: ' + data.message);
+        this.whisperStatus.textContent = 'Error';
+    }
+
+    addProcessedTranscript(result) {
+        this.processedTranscripts.push(result);
+        this.processedTranscriptCount++;
+
+        // Update count
+        this.processedCountSpan.textContent = this.processedTranscriptCount;
+
+        // Clear placeholder if it exists
+        this.clearProcessedTranscriptPlaceholder();
+
+        // Create processed transcript item
+        const item = document.createElement('div');
+        item.className = 'processed-transcript-item';
+        item.innerHTML = `
+            <div class="header">
+                <span>Processed ${result.original_transcript_count} transcripts</span>
+                <span>${new Date(result.timestamp).toLocaleTimeString()}</span>
+            </div>
+            <div class="text">${result.processed_text}</div>
+            <div class="footer">
+                <span>Model: ${result.llm_model}</span>
+                <span>Time: ${result.processing_time.toFixed(2)}s</span>
+            </div>
+        `;
+
+        this.processedTranscriptContent.appendChild(item);
+        this.processedTranscriptContent.scrollTop = this.processedTranscriptContent.scrollHeight;
+
+        // Show processed actions
+        this.processedActions.style.display = 'flex';
+    }
+
+    toggleRawPanel() {
+        const panel = document.querySelector('.raw-panel');
+        this.rawPanelVisible = !this.rawPanelVisible;
+
+        if (this.rawPanelVisible) {
+            panel.classList.remove('hidden');
+            this.toggleRawBtn.textContent = '👁️ Hide';
+        } else {
+            panel.classList.add('hidden');
+            this.toggleRawBtn.textContent = '👁️ Show';
+        }
+    }
+
+    toggleProcessedPanel() {
+        const panel = document.querySelector('.processed-panel');
+        this.processedPanelVisible = !this.processedPanelVisible;
+
+        if (this.processedPanelVisible) {
+            panel.classList.remove('hidden');
+            this.toggleProcessedBtn.textContent = '👁️ Hide';
+        } else {
+            panel.classList.add('hidden');
+            this.toggleProcessedBtn.textContent = '👁️ Show';
+        }
+    }
+
+    clearRawTranscriptPlaceholder() {
+        const placeholder = this.rawTranscriptContent.querySelector('.transcript-placeholder');
+        if (placeholder) {
+            placeholder.remove();
+        }
+    }
+
+    clearProcessedTranscriptPlaceholder() {
+        const placeholder = this.processedTranscriptContent.querySelector('.transcript-placeholder');
+        if (placeholder) {
+            placeholder.remove();
+        }
+    }
+
+    saveProcessedTranscript() {
+        // This would typically save to database - for now just show success
+        this.showSuccessMessage('Processed transcript saved to database');
+    }
+
+    exportProcessedTranscript() {
+        if (this.processedTranscripts.length === 0) {
+            this.showErrorMessage('No processed transcripts to export');
+            return;
+        }
+
+        // Create export data
+        const exportData = {
+            session_id: this.sessionId,
+            timestamp: new Date().toISOString(),
+            processed_transcripts: this.processedTranscripts
+        };
+
+        // Create and download file
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `processed_transcripts_${this.sessionId || 'session'}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showSuccessMessage('Processed transcripts exported');
+    }
+
+    showSuccessMessage(message) {
+        // Create success notification
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-notification';
+        successDiv.innerHTML = `
+            <div style="background: #34c759; color: white; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <strong>✅ Success:</strong> ${message}
+            </div>
+        `;
+
+        // Insert at top of container
+        const container = document.querySelector('.container');
+        container.insertBefore(successDiv, container.firstChild);
+
+        // Remove after 5 seconds
+        setTimeout(() => {
+            successDiv.remove();
+        }, 5000);
     }
 }
 

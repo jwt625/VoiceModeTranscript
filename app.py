@@ -16,6 +16,8 @@ import queue
 # Import our custom modules
 from src.audio_capture import AudioCapture
 from src.transcript_processor import TranscriptProcessor
+from src.whisper_stream_processor import WhisperStreamProcessor
+from src.llm_processor import LLMProcessor
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -32,6 +34,77 @@ recording_state = {
 
 audio_capture = None
 transcript_processor = None
+whisper_processor = None
+llm_processor = None
+
+
+def on_whisper_transcript(event_data):
+    """Callback for whisper streaming processor events"""
+    try:
+        if event_data['type'] == 'raw_transcript':
+            # Save raw transcript to database
+            transcript_data = event_data['data']
+            save_raw_transcript(transcript_data)
+
+            # Send via SSE
+            stream_queue.put({
+                'type': 'raw_transcript',
+                'data': transcript_data,
+                'accumulated_count': event_data['accumulated_count']
+            }, block=False)
+
+        elif event_data['type'] == 'error':
+            # Send error via SSE
+            stream_queue.put({
+                'type': 'whisper_error',
+                'message': event_data['message'],
+                'session_id': event_data['session_id']
+            }, block=False)
+
+    except queue.Full:
+        print("⚠️ Stream queue full, dropping whisper event")
+    except Exception as e:
+        print(f"❌ Error in whisper callback: {e}")
+
+
+def on_llm_result(event_data):
+    """Callback for LLM processor events"""
+    try:
+        if event_data['type'] == 'llm_processing_start':
+            # Send processing start via SSE
+            stream_queue.put({
+                'type': 'llm_processing_start',
+                'job_id': event_data['job_id'],
+                'session_id': event_data['session_id'],
+                'transcript_count': event_data['transcript_count']
+            }, block=False)
+
+        elif event_data['type'] == 'llm_processing_complete':
+            # Save processed transcript to database
+            result = event_data['result']
+            if result.get('status') == 'success':
+                save_processed_transcript(result)
+
+            # Send completion via SSE
+            stream_queue.put({
+                'type': 'llm_processing_complete',
+                'job_id': event_data['job_id'],
+                'result': result
+            }, block=False)
+
+        elif event_data['type'] == 'llm_processing_error':
+            # Send error via SSE
+            stream_queue.put({
+                'type': 'llm_processing_error',
+                'job_id': event_data['job_id'],
+                'error': event_data['error']
+            }, block=False)
+
+    except queue.Full:
+        print("⚠️ Stream queue full, dropping LLM event")
+    except Exception as e:
+        print(f"❌ Error in LLM callback: {e}")
+
 
 @app.route('/')
 def index():
@@ -73,25 +146,17 @@ def get_status():
 
 @app.route('/api/start', methods=['POST'])
 def start_recording():
-    """Start recording and transcription"""
-    global audio_capture, transcript_processor, recording_state
-    
+    """Start recording and transcription with whisper.cpp streaming"""
+    global whisper_processor, llm_processor, recording_state
+
     try:
         if recording_state['is_recording']:
             return jsonify({'error': 'Already recording'}), 400
-        
-        # Initialize components
-        audio_capture = AudioCapture()
-        transcript_processor = TranscriptProcessor()
-        
-        # Check audio devices
-        input_devices, output_devices = audio_capture.list_devices()
-        if not input_devices:
-            return jsonify({
-                'error': 'No microphone detected',
-                'message': 'Please connect a microphone and check audio permissions'
-            }), 400
-        
+
+        # Initialize processors
+        whisper_processor = WhisperStreamProcessor(callback=on_whisper_transcript)
+        llm_processor = LLMProcessor(callback=on_llm_result)
+
         # Start recording
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         recording_state.update({
@@ -99,73 +164,82 @@ def start_recording():
             'session_id': session_id,
             'start_time': datetime.now().isoformat()
         })
-        
+
         # Send recording started message via SSE
         try:
             stream_queue.put({
-                'type': 'transcript_update',
+                'type': 'recording_started',
                 'session_id': session_id,
                 'timestamp': datetime.now().isoformat(),
-                'source': 'system',
-                'text': '🎯 Recording started! SSE connection working.',
-                'confidence': 1.0,
-                'is_final': True
+                'message': '🎯 Whisper.cpp streaming started! Ready for transcription.',
+                'processor_type': 'whisper_stream'
             }, block=False)
         except queue.Full:
             print("⚠️ Stream queue full, dropping message")
 
-        # Clear any previous transcript state for new session
-        if hasattr(on_audio_chunk, 'last_transcript'):
-            on_audio_chunk.last_transcript.clear()
-            print("🧹 Cleared previous transcript state")
+        # Start whisper.cpp streaming
+        success = whisper_processor.start_streaming(session_id)
 
-        # Reinitialize transcript processor to clear any internal state
-        transcript_processor = TranscriptProcessor()
-        print("🔄 Reinitialized transcript processor")
+        if not success:
+            recording_state['is_recording'] = False
+            return jsonify({
+                'error': 'Failed to start whisper.cpp streaming',
+                'message': 'Check that whisper.cpp binary and model are available'
+            }), 500
 
-        # Start audio capture in background thread
-        def audio_thread():
-            audio_capture.start_recording(
-                session_id=session_id,
-                callback=on_audio_chunk
-            )
-
-        threading.Thread(target=audio_thread, daemon=True).start()
-        
         return jsonify({
             'success': True,
             'session_id': session_id,
-            'message': 'Recording started'
+            'message': 'Whisper.cpp streaming started',
+            'processor_type': 'whisper_stream'
         })
-        
+
     except Exception as e:
+        recording_state['is_recording'] = False
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/stop', methods=['POST'])
 def stop_recording():
-    """Stop recording and transcription"""
-    global audio_capture, recording_state
-    
+    """Stop whisper.cpp streaming and transcription"""
+    global whisper_processor, recording_state
+
     try:
         if not recording_state['is_recording']:
             return jsonify({'error': 'Not currently recording'}), 400
-        
-        # Stop audio capture
-        if audio_capture:
-            audio_capture.stop_recording()
-        
+
+        session_id = recording_state['session_id']
+
+        # Stop whisper streaming
+        stats = {}
+        if whisper_processor:
+            stats = whisper_processor.stop_streaming()
+
         # Update state
         recording_state.update({
             'is_recording': False,
             'session_id': None,
             'start_time': None
         })
-        
+
+        # Send recording stopped message via SSE
+        try:
+            stream_queue.put({
+                'type': 'recording_stopped',
+                'session_id': session_id,
+                'timestamp': datetime.now().isoformat(),
+                'message': '🛑 Whisper.cpp streaming stopped.',
+                'stats': stats
+            }, block=False)
+        except queue.Full:
+            print("⚠️ Stream queue full, dropping message")
+
         return jsonify({
             'success': True,
-            'message': 'Recording stopped'
+            'message': 'Whisper.cpp streaming stopped',
+            'session_id': session_id,
+            'stats': stats
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -181,11 +255,102 @@ def get_sessions():
 
 @app.route('/api/transcript/<session_id>')
 def get_transcript(session_id):
-    """Get transcript for a specific session"""
+    """Get transcript for a specific session (legacy endpoint)"""
     try:
         # TODO: Implement database query for transcript
         transcript = []
         return jsonify({'transcript': transcript})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/process-llm', methods=['POST'])
+def process_llm():
+    """Trigger LLM processing of accumulated transcripts"""
+    global whisper_processor, llm_processor
+
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+
+        if not session_id:
+            return jsonify({'error': 'session_id required'}), 400
+
+        if not whisper_processor:
+            return jsonify({'error': 'Whisper processor not initialized'}), 400
+
+        # Get accumulated transcripts
+        accumulated_transcripts = whisper_processor.get_accumulated_transcripts()
+
+        if not accumulated_transcripts:
+            return jsonify({'error': 'No transcripts to process'}), 400
+
+        # Process with LLM asynchronously
+        job_id = llm_processor.process_transcripts_async(accumulated_transcripts, session_id)
+
+        # Clear accumulated transcripts after sending to LLM
+        whisper_processor.clear_accumulated_transcripts()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'transcript_count': len(accumulated_transcripts),
+            'message': 'LLM processing started'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/raw-transcripts/<session_id>')
+def get_raw_transcripts(session_id):
+    """Get raw transcripts for a specific session"""
+    try:
+        transcripts = get_session_transcripts(session_id, 'raw')
+        return jsonify({
+            'session_id': session_id,
+            'transcripts': transcripts.get('raw', []),
+            'count': len(transcripts.get('raw', []))
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/processed-transcripts/<session_id>')
+def get_processed_transcripts(session_id):
+    """Get processed transcripts for a specific session"""
+    try:
+        transcripts = get_session_transcripts(session_id, 'processed')
+        return jsonify({
+            'session_id': session_id,
+            'transcripts': transcripts.get('processed', []),
+            'count': len(transcripts.get('processed', []))
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/toggle-display', methods=['POST'])
+def toggle_display():
+    """Toggle display settings for transcript panels"""
+    try:
+        data = request.get_json()
+        panel_type = data.get('panel_type')  # 'raw' or 'processed'
+        visible = data.get('visible', True)
+
+        if panel_type not in ['raw', 'processed']:
+            return jsonify({'error': 'Invalid panel_type. Must be "raw" or "processed"'}), 400
+
+        # Store display preferences (could be in session or database)
+        # For now, just return success - frontend will handle the toggle
+
+        return jsonify({
+            'success': True,
+            'panel_type': panel_type,
+            'visible': visible,
+            'message': f'{panel_type.title()} panel {"shown" if visible else "hidden"}'
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -342,10 +507,10 @@ def on_audio_chunk(audio_data, source='microphone', audio_level=None, is_transcr
 # SSE doesn't need connection handlers - connections are automatic
 
 def init_database():
-    """Initialize SQLite database"""
+    """Initialize SQLite database with dual transcript support"""
     conn = sqlite3.connect('transcripts.db')
     cursor = conn.cursor()
-    
+
     # Create sessions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
@@ -353,11 +518,42 @@ def init_database():
             start_time TEXT NOT NULL,
             end_time TEXT,
             duration INTEGER,
-            total_segments INTEGER DEFAULT 0
+            total_segments INTEGER DEFAULT 0,
+            raw_transcript_count INTEGER DEFAULT 0,
+            processed_transcript_count INTEGER DEFAULT 0
         )
     ''')
-    
-    # Create transcripts table
+
+    # Create raw_transcripts table for whisper.cpp output
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS raw_transcripts (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            sequence_number INTEGER NOT NULL,
+            confidence REAL,
+            processing_time REAL,
+            FOREIGN KEY (session_id) REFERENCES sessions (id)
+        )
+    ''')
+
+    # Create processed_transcripts table for LLM output
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processed_transcripts (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            processed_text TEXT NOT NULL,
+            original_transcript_ids TEXT NOT NULL,
+            original_transcript_count INTEGER NOT NULL,
+            llm_model TEXT NOT NULL,
+            processing_time REAL NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions (id)
+        )
+    ''')
+
+    # Create legacy transcripts table (keep for backward compatibility)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transcripts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,9 +566,137 @@ def init_database():
             FOREIGN KEY (session_id) REFERENCES sessions (id)
         )
     ''')
-    
+
+    # Create indexes for better performance
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_session ON raw_transcripts(session_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_processed_transcripts_session ON processed_transcripts(session_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_timestamp ON raw_transcripts(timestamp)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_processed_transcripts_timestamp ON processed_transcripts(timestamp)')
+
     conn.commit()
     conn.close()
+
+
+def save_raw_transcript(transcript_data):
+    """Save raw transcript from whisper.cpp to database"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO raw_transcripts
+            (id, session_id, text, timestamp, sequence_number, confidence, processing_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            transcript_data['id'],
+            transcript_data['session_id'],
+            transcript_data['text'],
+            transcript_data['timestamp'],
+            transcript_data['sequence_number'],
+            transcript_data.get('confidence'),
+            transcript_data.get('processing_time')
+        ))
+
+        conn.commit()
+        conn.close()
+        return True
+
+    except Exception as e:
+        print(f"Error saving raw transcript: {e}")
+        return False
+
+
+def save_processed_transcript(processed_data):
+    """Save LLM-processed transcript to database"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Convert transcript IDs list to JSON string
+        transcript_ids_json = json.dumps(processed_data['original_transcript_ids'])
+
+        cursor.execute('''
+            INSERT INTO processed_transcripts
+            (id, session_id, processed_text, original_transcript_ids,
+             original_transcript_count, llm_model, processing_time, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            processed_data['id'],
+            processed_data['session_id'],
+            processed_data['processed_text'],
+            transcript_ids_json,
+            processed_data['original_transcript_count'],
+            processed_data['llm_model'],
+            processed_data['processing_time'],
+            processed_data['timestamp']
+        ))
+
+        conn.commit()
+        conn.close()
+        return True
+
+    except Exception as e:
+        print(f"Error saving processed transcript: {e}")
+        return False
+
+
+def get_session_transcripts(session_id, transcript_type='both'):
+    """Get transcripts for a session"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        result = {}
+
+        if transcript_type in ['raw', 'both']:
+            cursor.execute('''
+                SELECT id, text, timestamp, sequence_number, confidence, processing_time
+                FROM raw_transcripts
+                WHERE session_id = ?
+                ORDER BY sequence_number
+            ''', (session_id,))
+
+            raw_transcripts = []
+            for row in cursor.fetchall():
+                raw_transcripts.append({
+                    'id': row[0],
+                    'text': row[1],
+                    'timestamp': row[2],
+                    'sequence_number': row[3],
+                    'confidence': row[4],
+                    'processing_time': row[5]
+                })
+            result['raw'] = raw_transcripts
+
+        if transcript_type in ['processed', 'both']:
+            cursor.execute('''
+                SELECT id, processed_text, original_transcript_ids,
+                       original_transcript_count, llm_model, processing_time, timestamp
+                FROM processed_transcripts
+                WHERE session_id = ?
+                ORDER BY timestamp
+            ''', (session_id,))
+
+            processed_transcripts = []
+            for row in cursor.fetchall():
+                processed_transcripts.append({
+                    'id': row[0],
+                    'processed_text': row[1],
+                    'original_transcript_ids': json.loads(row[2]),
+                    'original_transcript_count': row[3],
+                    'llm_model': row[4],
+                    'processing_time': row[5],
+                    'timestamp': row[6]
+                })
+            result['processed'] = processed_transcripts
+
+        conn.close()
+        return result
+
+    except Exception as e:
+        print(f"Error getting session transcripts: {e}")
+        return {}
+
 
 if __name__ == '__main__':
     # Initialize database
