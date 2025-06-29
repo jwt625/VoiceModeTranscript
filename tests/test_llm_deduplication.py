@@ -6,27 +6,21 @@ Uses LLM to intelligently deduplicate and summarize overlapping transcripts
 
 import subprocess
 import threading
-import time
 import re
 import os
-from collections import deque
 from openai import OpenAI
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-class LLMTranscriptProcessor:
-    def __init__(self, pause_threshold=5.0):
-        """
-        Initialize LLM-based transcript processor
 
-        Args:
-            pause_threshold: Seconds of silence before sending to LLM
+class LLMTranscriptProcessor:
+    def __init__(self):
+        """
+        Initialize LLM-based transcript processor with manual spacebar triggering
         """
         self.accumulated_transcripts = []
-        self.last_transcript_time = time.time()
-        self.pause_threshold = pause_threshold
         self.transcript_counter = 0
         self.current_transcription_block = []
         self.in_transcription_block = False
@@ -37,7 +31,9 @@ class LLMTranscriptProcessor:
             base_url="https://api.lambda.ai/v1",
         )
         self.model = "llama-4-maverick-17b-128e-instruct-fp8"
-        
+
+
+
     def process_line(self, line):
         """Process a single line from whisper.cpp output"""
         line = line.strip()
@@ -55,6 +51,7 @@ class LLMTranscriptProcessor:
                 self.add_transcript_block(self.current_transcription_block)
             self.in_transcription_block = False
             self.current_transcription_block = []
+
             return
 
         # If we're in a transcription block, collect the lines
@@ -68,26 +65,14 @@ class LLMTranscriptProcessor:
             return
 
         self.transcript_counter += 1
-        current_time = time.time()
 
         print(f"\n--- Transcription {self.transcript_counter} ---")
         print(f"[RAW] {transcript_text}")
 
         # Add to accumulated transcripts
-        self.accumulated_transcripts.append({
-            'id': self.transcript_counter,
-            'text': transcript_text,
-            'timestamp': current_time
-        })
-
-        # Check if enough time has passed since last transcript
-        time_since_last = current_time - self.last_transcript_time
-        self.last_transcript_time = current_time
-
-        # If we have a pause or enough transcripts, process with LLM
-        if (time_since_last > self.pause_threshold and len(self.accumulated_transcripts) > 1) or \
-           len(self.accumulated_transcripts) >= 10:  # Also process if we have many transcripts
-            self.process_with_llm()
+        self.accumulated_transcripts.append(transcript_text)
+        print(f"� Total accumulated transcripts: {len(self.accumulated_transcripts)}")
+        print("⌨️  Press ENTER to process with LLM, or let it accumulate more...")
 
     def extract_transcript_from_block(self, block_lines):
         """Extract transcript text from a transcription block"""
@@ -172,13 +157,36 @@ Return only the clean, deduplicated transcript without any explanations or metad
             
         # Clear accumulated transcripts after processing
         self.accumulated_transcripts = []
+
+    def manual_process_trigger(self):
+        """Manually trigger LLM processing"""
+        if self.accumulated_transcripts:
+            print(f"\n🤖 Manual trigger: Processing {len(self.accumulated_transcripts)} transcripts with LLM...")
+            self.process_with_llm()
+        else:
+            print("📝 No transcripts to process yet.")
         
     def format_transcripts_for_llm(self):
         """Format accumulated transcripts for LLM processing"""
         formatted = []
         for i, transcript in enumerate(self.accumulated_transcripts, 1):
-            formatted.append(f"Transcript {i}: {transcript['text']}")
+            formatted.append(f"Transcript {i}: {transcript}")
         return "\n\n".join(formatted)
+
+
+def keyboard_listener(processor):
+    """Listen for Enter key presses to trigger LLM processing"""
+    print("⌨️  Keyboard listener started. Press ENTER to process transcripts with LLM.")
+
+    try:
+        while True:
+            # Wait for Enter key
+            input()  # This will wait for Enter key press
+            processor.manual_process_trigger()
+    except KeyboardInterrupt:
+        pass
+    except EOFError:
+        pass
 
 
 def run_whisper_with_llm():
@@ -206,12 +214,16 @@ def run_whisper_with_llm():
     print("🎤 Starting LLM-based Whisper.cpp Deduplication Test")
     print("=" * 60)
     print("💡 Speak into your microphone")
-    print("🤖 LLM will process transcripts after pauses or when enough accumulate")
+    print("⌨️  Press ENTER to process accumulated transcripts with LLM")
     print("🛑 Press Ctrl+C to stop")
     print("")
 
     # Initialize the LLM processor
-    processor = LLMTranscriptProcessor(pause_threshold=5.0)
+    processor = LLMTranscriptProcessor()
+
+    # Start keyboard listener in a separate thread
+    keyboard_thread = threading.Thread(target=keyboard_listener, args=(processor,), daemon=True)
+    keyboard_thread.start()
 
     # Whisper command similar to run_whisper_stream_vad.sh
     cmd = [
@@ -243,12 +255,12 @@ def run_whisper_with_llm():
     except KeyboardInterrupt:
         print("\n🛑 Stopping...")
         process.terminate()
-        
+
         # Process any remaining transcripts
         if processor.accumulated_transcripts:
             print("\n🔄 Processing remaining transcripts...")
             processor.process_with_llm()
-            
+
     except Exception as e:
         print(f"❌ Error running whisper: {e}")
     finally:
