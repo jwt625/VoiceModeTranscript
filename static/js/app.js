@@ -794,10 +794,24 @@ class TranscriptRecorder {
         // Create transcript item
         const item = document.createElement('div');
         item.className = 'raw-transcript-item';
+
+        // Get audio source and map to display info
+        const audioSource = data.audio_source || 'unknown';
+        const sourceInfo = this.getAudioSourceDisplayInfo(audioSource);
+
+        // Add source-specific CSS class
+        item.classList.add(`source-${audioSource}`);
+
         item.innerHTML = `
-            <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
+            <div class="transcript-header">
+                <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
+                <div class="audio-source ${sourceInfo.class}">
+                    <span class="source-icon">${sourceInfo.icon}</span>
+                    <span class="source-label">${sourceInfo.label}</span>
+                </div>
+                <div class="sequence">#${data.sequence_number}</div>
+            </div>
             <div class="text">${data.text}</div>
-            <div class="sequence">#${data.sequence_number}</div>
         `;
 
         this.rawTranscriptContent.appendChild(item);
@@ -807,6 +821,28 @@ class TranscriptRecorder {
         if (this.rawTranscriptCount > 0 && !this.isLLMProcessing) {
             this.processLLMBtn.disabled = false;
         }
+    }
+
+    getAudioSourceDisplayInfo(audioSource) {
+        const sourceMap = {
+            'microphone': {
+                icon: '🎤',
+                label: 'User',
+                class: 'source-user'
+            },
+            'system': {
+                icon: '🔊',
+                label: 'Assistant',
+                class: 'source-assistant'
+            },
+            'unknown': {
+                icon: '❓',
+                label: 'Unknown',
+                class: 'source-unknown'
+            }
+        };
+
+        return sourceMap[audioSource] || sourceMap['unknown'];
     }
 
     async processWithLLM() {
@@ -909,12 +945,16 @@ class TranscriptRecorder {
         // Create processed transcript item
         const item = document.createElement('div');
         item.className = 'processed-transcript-item';
+
+        // Convert line breaks to HTML for proper display
+        const formattedText = this.formatTextWithLineBreaks(result.processed_text);
+
         item.innerHTML = `
             <div class="header">
                 <span>Processed ${result.original_transcript_count} transcripts</span>
                 <span>${new Date(result.timestamp).toLocaleTimeString()}</span>
             </div>
-            <div class="text">${result.processed_text}</div>
+            <div class="text">${formattedText}</div>
             <div class="footer">
                 <span>Model: ${result.llm_model}</span>
                 <span>Time: ${result.processing_time.toFixed(2)}s</span>
@@ -926,6 +966,17 @@ class TranscriptRecorder {
 
         // Show processed actions
         this.processedActions.style.display = 'flex';
+    }
+
+    formatTextWithLineBreaks(text) {
+        // Convert newlines to HTML line breaks and escape HTML characters
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/\n/g, '<br>');
     }
 
     toggleRawPanel() {

@@ -413,10 +413,66 @@ header h1 {
     border-left: 3px solid #ff9500;
 }
 
+/* Audio source specific styling */
+.raw-transcript-item.source-microphone {
+    border-left-color: #34c759; /* Green for user */
+}
+
+.raw-transcript-item.source-system {
+    border-left-color: #007aff; /* Blue for assistant */
+}
+
+.raw-transcript-item.source-unknown {
+    border-left-color: #8e8e93; /* Gray for unknown */
+}
+
+.transcript-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .raw-transcript-item .timestamp {
     font-size: 11px;
     color: #a1a1a6;
-    margin-bottom: 5px;
+}
+
+.audio-source {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.audio-source.source-user {
+    background: rgba(52, 199, 89, 0.2);
+    color: #34c759;
+}
+
+.audio-source.source-assistant {
+    background: rgba(0, 122, 255, 0.2);
+    color: #007aff;
+}
+
+.audio-source.source-unknown {
+    background: rgba(142, 142, 147, 0.2);
+    color: #8e8e93;
+}
+
+.source-icon {
+    font-size: 10px;
+}
+
+.source-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .raw-transcript-item .text {
@@ -427,7 +483,6 @@ header h1 {
 .raw-transcript-item .sequence {
     font-size: 10px;
     color: #8e8e93;
-    float: right;
 }
 
 .processed-transcript-item {
@@ -451,6 +506,8 @@ header h1 {
     color: #f5f5f7;
     line-height: 1.5;
     font-size: 15px;
+    white-space: pre-wrap; /* Preserve whitespace and line breaks */
+    word-wrap: break-word; /* Break long words if needed */
 }
 
 .processed-transcript-item .footer {
