@@ -19,22 +19,26 @@ load_dotenv()
 
 
 class WhisperStreamProcessor:
-    def __init__(self, callback: Optional[Callable] = None):
+    def __init__(self, callback: Optional[Callable] = None, audio_source: str = "microphone", audio_device_id: Optional[int] = None):
         """
         Initialize whisper.cpp streaming processor for Flask integration
-        
+
         Args:
             callback: Function to call when new transcripts are available
                      Signature: callback(transcript_data: Dict[str, Any])
+            audio_source: Source of audio being processed ('microphone' or 'system')
+            audio_device_id: Optional audio device ID to use for capture
         """
         self.callback = callback
+        self.audio_source = audio_source
+        self.audio_device_id = audio_device_id
         self.accumulated_transcripts = []
         self.transcript_counter = 0
         self.current_transcription_block = []
         self.in_transcription_block = False
         self.is_running = False
         self.session_id = None
-        
+
         # Whisper.cpp process management
         self.whisper_process = None
         self.processing_thread = None
@@ -147,8 +151,12 @@ class WhisperStreamProcessor:
             "--length", "30000", # 30 second window
             "-vth", "0.6"        # VAD threshold
         ]
-        
-        print(f"🔧 Running whisper.cpp: {' '.join(cmd)}")
+
+        # Add audio device specification if provided
+        if self.audio_device_id is not None:
+            cmd.extend(["-c", str(self.audio_device_id)])  # Capture device ID
+
+        print(f"🔧 Running whisper.cpp ({self.audio_source}): {' '.join(cmd)}")
         
         try:
             self.whisper_process = subprocess.Popen(
@@ -220,13 +228,14 @@ class WhisperStreamProcessor:
             "text": transcript_text,
             "timestamp": datetime.now().isoformat(),
             "sequence_number": self.transcript_counter,
-            "type": "raw_transcript"
+            "type": "raw_transcript",
+            "audio_source": self.audio_source
         }
         
         # Add to accumulated transcripts
         self.accumulated_transcripts.append(transcript_data)
         
-        print(f"📝 Raw transcript {self.transcript_counter}: {transcript_text}")
+        print(f"📝 Raw transcript {self.transcript_counter} ({self.audio_source}): {transcript_text}")
         print(f"📚 Total accumulated: {len(self.accumulated_transcripts)}")
         
         # Notify callback if provided

@@ -794,10 +794,24 @@ class TranscriptRecorder {
         // Create transcript item
         const item = document.createElement('div');
         item.className = 'raw-transcript-item';
+
+        // Get audio source and map to display info
+        const audioSource = data.audio_source || 'unknown';
+        const sourceInfo = this.getAudioSourceDisplayInfo(audioSource);
+
+        // Add source-specific CSS class
+        item.classList.add(`source-${audioSource}`);
+
         item.innerHTML = `
-            <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
+            <div class="transcript-header">
+                <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
+                <div class="audio-source ${sourceInfo.class}">
+                    <span class="source-icon">${sourceInfo.icon}</span>
+                    <span class="source-label">${sourceInfo.label}</span>
+                </div>
+                <div class="sequence">#${data.sequence_number}</div>
+            </div>
             <div class="text">${data.text}</div>
-            <div class="sequence">#${data.sequence_number}</div>
         `;
 
         this.rawTranscriptContent.appendChild(item);
@@ -807,6 +821,28 @@ class TranscriptRecorder {
         if (this.rawTranscriptCount > 0 && !this.isLLMProcessing) {
             this.processLLMBtn.disabled = false;
         }
+    }
+
+    getAudioSourceDisplayInfo(audioSource) {
+        const sourceMap = {
+            'microphone': {
+                icon: '🎤',
+                label: 'User',
+                class: 'source-user'
+            },
+            'system': {
+                icon: '🔊',
+                label: 'Assistant',
+                class: 'source-assistant'
+            },
+            'unknown': {
+                icon: '❓',
+                label: 'Unknown',
+                class: 'source-unknown'
+            }
+        };
+
+        return sourceMap[audioSource] || sourceMap['unknown'];
     }
 
     async processWithLLM() {

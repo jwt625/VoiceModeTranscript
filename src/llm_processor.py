@@ -105,7 +105,8 @@ class LLMProcessor:
             # Format transcripts for LLM
             formatted_text = self._format_transcripts_for_llm(transcripts)
             
-            # Call LLM API
+            # Call LLM API with timeout
+            print(f"🤖 Sending {len(transcripts)} transcripts to LLM...")
             response = self.client.chat.completions.create(
                 messages=[
                     {
@@ -113,14 +114,16 @@ class LLMProcessor:
                         "content": self._get_system_prompt()
                     },
                     {
-                        "role": "user", 
+                        "role": "user",
                         "content": f"Please process these overlapping transcripts:\n\n{formatted_text}"
                     }
                 ],
                 model=self.model,
                 temperature=0.1,  # Low temperature for consistent processing
-                max_tokens=1000
+                max_tokens=5000,
+                timeout=30  # 30 second timeout
             )
+            print(f"✅ LLM response received in {time.time() - start_time:.2f}s")
             
             processing_time = time.time() - start_time
             
@@ -159,7 +162,14 @@ class LLMProcessor:
                 "status": "error"
             }
             
-            print(f"❌ LLM processing error: {e}")
+            error_type = type(e).__name__
+            processing_time = time.time() - start_time
+            print(f"❌ LLM processing failed after {processing_time:.2f}s ({error_type}): {e}")
+
+            # Check for specific timeout or connection errors
+            if "timeout" in str(e).lower() or "connection" in str(e).lower():
+                print("🔄 This appears to be a network/timeout issue. Try again.")
+
             return error_result
 
     def _process_queue_worker(self):
@@ -219,24 +229,47 @@ class LLMProcessor:
         for i, transcript in enumerate(transcripts, 1):
             text = transcript.get("text", "")
             timestamp = transcript.get("timestamp", "")
-            formatted.append(f"Transcript {i} ({timestamp}): {text}")
+            audio_source = transcript.get("audio_source", "unknown")
+
+            # Map audio source to speaker role
+            speaker_role = self._map_audio_source_to_role(audio_source)
+            formatted.append(f"Transcript {i} ({timestamp}) [{speaker_role}]: {text}")
         return "\n\n".join(formatted)
+
+    def _map_audio_source_to_role(self, audio_source: str) -> str:
+        """Map audio source to speaker role for LLM understanding"""
+        role_mapping = {
+            "microphone": "USER",
+            "system": "ASSISTANT",
+            "unknown": "UNKNOWN"
+        }
+        return role_mapping.get(audio_source, "UNKNOWN")
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for LLM processing"""
         return """You are an expert transcript processor. You will receive multiple overlapping speech transcripts from whisper.cpp that contain duplicate and similar content due to sliding window processing.
 
+Each transcript is labeled with a speaker role:
+- [USER]: Speech from the microphone (user speaking)
+- [ASSISTANT]: Speech from system audio (ChatGPT or other AI assistant)
+- [UNKNOWN]: Speech from unidentified source
+
 Your task is to:
-1. Intelligently merge and deduplicate the overlapping content
+1. Intelligently merge and deduplicate the overlapping content while preserving speaker roles
 2. Correct ONLY obvious transcription errors (like "boar" instead of "door") when context clearly indicates the error
 3. Create a clean, coherent transcript from the overlapping segments
 4. Stay truthful and faithful to the original speech content - do NOT add, embellish, or creatively interpret
-5. Preserve the exact meaning, tone, and style of the original speaker
+5. Preserve the exact meaning, tone, and style of each speaker
 6. If uncertain about a word or phrase, keep the most common version from the transcripts
+7. Maintain clear speaker attribution in the final output
 
 IMPORTANT: Your goal is accuracy and faithfulness to the original speech, not creative storytelling.
 
-Return only the clean, deduplicated transcript without any explanations or metadata."""
+Return the clean, deduplicated transcript in this format:
+[SPEAKER_ROLE]: transcript text
+[SPEAKER_ROLE]: transcript text
+
+Do not include explanations or metadata beyond the speaker roles and transcript text."""
 
     def get_stats(self) -> Dict[str, Any]:
         """Get LLM processing statistics"""

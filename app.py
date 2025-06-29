@@ -17,6 +17,7 @@ import queue
 from src.audio_capture import AudioCapture
 from src.transcript_processor import TranscriptProcessor
 from src.whisper_stream_processor import WhisperStreamProcessor
+from src.multi_source_whisper_manager import MultiSourceWhisperManager
 from src.llm_processor import LLMProcessor
 
 app = Flask(__name__)
@@ -34,7 +35,8 @@ recording_state = {
 
 audio_capture = None
 transcript_processor = None
-whisper_processor = None
+mic_whisper_processor = None
+system_whisper_processor = None
 llm_processor = None
 
 
@@ -147,7 +149,7 @@ def get_status():
 @app.route('/api/start', methods=['POST'])
 def start_recording():
     """Start recording and transcription with whisper.cpp streaming"""
-    global whisper_processor, llm_processor, audio_capture, recording_state
+    global mic_whisper_processor, system_whisper_processor, llm_processor, audio_capture, recording_state
 
     try:
         if recording_state['is_recording']:
@@ -177,11 +179,7 @@ def start_recording():
 
         print(f"🎛️ Device selection request - Mic: {requested_mic_device}, System: {requested_system_device} ({'output' if is_output_device else 'input'})")
 
-        # Initialize processors
-        whisper_processor = WhisperStreamProcessor(callback=on_whisper_transcript)
-        llm_processor = LLMProcessor(callback=on_llm_result)
-
-        # Initialize audio capture for volume monitoring
+        # Initialize audio capture for volume monitoring first to validate devices
         audio_capture = AudioCapture()
         audio_capture.callback = on_audio_chunk
 
@@ -189,6 +187,14 @@ def start_recording():
         try:
             input_devices, output_devices = audio_capture.list_devices()
             print(f"🎧 Found {len(input_devices)} input devices, {len(output_devices)} output devices")
+
+            # Debug: List all input devices to help identify the correct BlackHole device
+            print("📋 Available input devices:")
+            for device_id, device_name in input_devices:
+                print(f"   Device {device_id}: {device_name}")
+            print("📋 Available output devices:")
+            for device_id, device_name in output_devices:
+                print(f"   Device {device_id}: {device_name}")
 
             # Use requested devices or auto-detect
             mic_device_id = requested_mic_device
@@ -244,7 +250,17 @@ def start_recording():
             if system_device_id is None:
                 for device_id, device_name in input_devices:
                     device_name_lower = device_name.lower()
-                    if any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
+                    # Prefer loopback devices for system audio capture
+                    if 'loopback' in device_name_lower:
+                        system_device_id = device_id
+                        print(f"🔊 Auto-detected system audio device (loopback): {device_name} (ID: {device_id})")
+                        break
+                    elif 'blackhole' in device_name_lower and 'output' not in device_name_lower:
+                        # BlackHole input device (not direct output)
+                        system_device_id = device_id
+                        print(f"🔊 Auto-detected system audio device (BlackHole input): {device_name} (ID: {device_id})")
+                        break
+                    elif any(keyword in device_name_lower for keyword in ['soundflower', 'system audio']):
                         system_device_id = device_id
                         print(f"🔊 Auto-detected system audio device: {device_name} (ID: {device_id})")
                         break
@@ -272,6 +288,27 @@ def start_recording():
         except Exception as e:
             print(f"⚠️  Error setting up audio devices: {e}")
 
+        # Initialize processors with validated device IDs
+        mic_whisper_processor = WhisperStreamProcessor(
+            callback=on_whisper_transcript,
+            audio_source="microphone",
+            audio_device_id=mic_device_id
+        )
+
+        # System audio processor (if system device is available)
+        system_whisper_processor = None
+        if system_device_id is not None:
+            system_whisper_processor = WhisperStreamProcessor(
+                callback=on_whisper_transcript,
+                audio_source="system",
+                audio_device_id=system_device_id
+            )
+            print("🔊 System audio transcription enabled")
+        else:
+            print("⚠️  System audio transcription disabled (no system audio device)")
+
+        llm_processor = LLMProcessor(callback=on_llm_result)
+
         # Start recording
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         recording_state.update({
@@ -292,15 +329,31 @@ def start_recording():
         except queue.Full:
             print("⚠️ Stream queue full, dropping message")
 
-        # Start whisper.cpp streaming
-        success = whisper_processor.start_streaming(session_id)
+        # Start whisper.cpp streaming for microphone
+        mic_success = mic_whisper_processor.start_streaming(session_id)
 
-        if not success:
+        # Start whisper.cpp streaming for system audio (if available)
+        system_success = True
+        if system_whisper_processor:
+            print(f"🔧 Attempting to start system audio transcription with device {system_device_id}")
+            system_success = system_whisper_processor.start_streaming(session_id)
+            if system_success:
+                print("🔊 System audio transcription started successfully")
+            else:
+                print("⚠️  System audio transcription failed to start")
+
+        if not mic_success:
             recording_state['is_recording'] = False
             return jsonify({
-                'error': 'Failed to start whisper.cpp streaming',
+                'error': 'Failed to start whisper.cpp streaming for microphone',
                 'message': 'Check that whisper.cpp binary and model are available'
             }), 500
+
+        # Report status
+        active_sources = ["microphone"]
+        if system_success and system_whisper_processor:
+            active_sources.append("system")
+        print(f"✅ Active transcription sources: {', '.join(active_sources)}")
 
         # Start audio capture for volume monitoring (separate from whisper.cpp)
         try:
@@ -324,7 +377,7 @@ def start_recording():
 @app.route('/api/stop', methods=['POST'])
 def stop_recording():
     """Stop whisper.cpp streaming and transcription"""
-    global whisper_processor, audio_capture, recording_state
+    global mic_whisper_processor, system_whisper_processor, audio_capture, recording_state
 
     try:
         if not recording_state['is_recording']:
@@ -332,10 +385,16 @@ def stop_recording():
 
         session_id = recording_state['session_id']
 
-        # Stop whisper streaming
+        # Stop whisper streaming for both sources
         stats = {}
-        if whisper_processor:
-            stats = whisper_processor.stop_streaming()
+        if mic_whisper_processor:
+            mic_stats = mic_whisper_processor.stop_streaming()
+            stats['microphone'] = mic_stats
+
+        if system_whisper_processor:
+            system_stats = system_whisper_processor.stop_streaming()
+            stats['system'] = system_stats
+            print("🔊 System audio transcription stopped")
 
         # Stop audio capture
         if audio_capture:
@@ -398,7 +457,7 @@ def get_transcript(session_id):
 @app.route('/api/process-llm', methods=['POST'])
 def process_llm():
     """Trigger LLM processing of accumulated transcripts"""
-    global whisper_processor, llm_processor
+    global mic_whisper_processor, system_whisper_processor, llm_processor
 
     try:
         data = request.get_json()
@@ -407,20 +466,34 @@ def process_llm():
         if not session_id:
             return jsonify({'error': 'session_id required'}), 400
 
-        if not whisper_processor:
+        if not mic_whisper_processor:
             return jsonify({'error': 'Whisper processor not initialized'}), 400
 
-        # Get accumulated transcripts
-        accumulated_transcripts = whisper_processor.get_accumulated_transcripts()
+        # Get accumulated transcripts from both sources
+        accumulated_transcripts = []
+
+        # Add microphone transcripts
+        mic_transcripts = mic_whisper_processor.get_accumulated_transcripts()
+        accumulated_transcripts.extend(mic_transcripts)
+
+        # Add system audio transcripts if available
+        if system_whisper_processor:
+            system_transcripts = system_whisper_processor.get_accumulated_transcripts()
+            accumulated_transcripts.extend(system_transcripts)
 
         if not accumulated_transcripts:
             return jsonify({'error': 'No transcripts to process'}), 400
+
+        # Sort transcripts by timestamp to maintain chronological order
+        accumulated_transcripts.sort(key=lambda x: x.get('timestamp', ''))
 
         # Process with LLM asynchronously
         job_id = llm_processor.process_transcripts_async(accumulated_transcripts, session_id)
 
         # Clear accumulated transcripts after sending to LLM
-        whisper_processor.clear_accumulated_transcripts()
+        mic_whisper_processor.clear_accumulated_transcripts()
+        if system_whisper_processor:
+            system_whisper_processor.clear_accumulated_transcripts()
 
         return jsonify({
             'success': True,
@@ -558,7 +631,7 @@ def get_all_raw_transcripts():
 
         # Get paginated results
         cursor.execute('''
-            SELECT id, session_id, text, timestamp, sequence_number, confidence, processing_time
+            SELECT id, session_id, text, timestamp, sequence_number, confidence, processing_time, audio_source
             FROM raw_transcripts
             ORDER BY timestamp DESC
             LIMIT ? OFFSET ?
@@ -573,7 +646,8 @@ def get_all_raw_transcripts():
                 'timestamp': row[3],
                 'sequence_number': row[4],
                 'confidence': row[5],
-                'processing_time': row[6]
+                'processing_time': row[6],
+                'audio_source': row[7]
             })
 
         conn.close()
@@ -856,6 +930,7 @@ def init_database():
             sequence_number INTEGER NOT NULL,
             confidence REAL,
             processing_time REAL,
+            audio_source TEXT NOT NULL DEFAULT 'unknown',
             FOREIGN KEY (session_id) REFERENCES sessions (id)
         )
     ''')
@@ -889,11 +964,22 @@ def init_database():
         )
     ''')
 
-    # Create indexes for better performance
+    # Migration: Add audio_source column to existing raw_transcripts table if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE raw_transcripts ADD COLUMN audio_source TEXT NOT NULL DEFAULT "unknown"')
+        print("✅ Added audio_source column to raw_transcripts table")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" in str(e).lower():
+            print("ℹ️  audio_source column already exists in raw_transcripts table")
+        else:
+            print(f"⚠️  Error adding audio_source column: {e}")
+
+    # Create indexes for better performance (after migration)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_session ON raw_transcripts(session_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_processed_transcripts_session ON processed_transcripts(session_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_timestamp ON raw_transcripts(timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_processed_transcripts_timestamp ON processed_transcripts(timestamp)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_audio_source ON raw_transcripts(audio_source)')
 
     conn.commit()
     conn.close()
@@ -907,8 +993,8 @@ def save_raw_transcript(transcript_data):
 
         cursor.execute('''
             INSERT INTO raw_transcripts
-            (id, session_id, text, timestamp, sequence_number, confidence, processing_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (id, session_id, text, timestamp, sequence_number, confidence, processing_time, audio_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             transcript_data['id'],
             transcript_data['session_id'],
@@ -916,7 +1002,8 @@ def save_raw_transcript(transcript_data):
             transcript_data['timestamp'],
             transcript_data['sequence_number'],
             transcript_data.get('confidence'),
-            transcript_data.get('processing_time')
+            transcript_data.get('processing_time'),
+            transcript_data.get('audio_source', 'unknown')
         ))
 
         conn.commit()
@@ -972,7 +1059,7 @@ def get_session_transcripts(session_id, transcript_type='both'):
 
         if transcript_type in ['raw', 'both']:
             cursor.execute('''
-                SELECT id, text, timestamp, sequence_number, confidence, processing_time
+                SELECT id, text, timestamp, sequence_number, confidence, processing_time, audio_source
                 FROM raw_transcripts
                 WHERE session_id = ?
                 ORDER BY sequence_number
@@ -986,7 +1073,8 @@ def get_session_transcripts(session_id, transcript_type='both'):
                     'timestamp': row[2],
                     'sequence_number': row[3],
                     'confidence': row[4],
-                    'processing_time': row[5]
+                    'processing_time': row[5],
+                    'audio_source': row[6]
                 })
             result['raw'] = raw_transcripts
 
