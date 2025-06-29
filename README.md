@@ -5,6 +5,7 @@ A real-time transcript recorder for ChatGPT voice conversations with **dual-pane
 ## 🎯 Key Features
 
 - **🎤 Real-time whisper.cpp streaming** (no separate server needed!)
+- **🔊 Dual audio source capture** - microphone AND system audio simultaneously
 - **🤖 Intelligent LLM deduplication** using Lambda Labs API
 - **📱 Dual-panel interface** - raw transcripts vs processed transcripts
 - **⌨️ Keyboard shortcuts** - Press Enter to process with LLM
@@ -12,16 +13,19 @@ A real-time transcript recorder for ChatGPT voice conversations with **dual-pane
 - **🌙 Beautiful dark mode interface** with responsive design
 - **📊 Real-time processing monitor** with status indicators
 - **📤 Export functionality** for processed transcripts
+- **🎛️ Smart device mapping** - automatic SDL/PyAudio device translation
 
 ## 🚀 Major Upgrade: Whisper.cpp Streaming + LLM Processing
 
 **This version features a complete architectural upgrade:**
 
 - **🔥 Whisper.cpp streaming**: Direct subprocess integration (3-5x faster than HTTP)
+- **🎤🔊 Dual audio capture**: Simultaneous microphone and system audio transcription
 - **🧠 LLM deduplication**: Intelligent transcript cleaning using llama-4-maverick-17b
 - **📋 Dual-panel UI**: Compare raw whisper.cpp output vs LLM-processed results
 - **⚡ Real-time processing**: Live transcript accumulation with manual LLM triggering
 - **🎯 No overlapping transcripts**: Smart deduplication eliminates whisper.cpp sliding window artifacts
+- **🎛️ Smart device mapping**: Automatic SDL/PyAudio device ID translation
 
 ## 🏗️ New Architecture
 
@@ -183,6 +187,7 @@ Voice_Mode_transcript/
 ├── src/                  # 🔧 Core modules
 │   ├── whisper_stream_processor.py # 🚀 NEW: whisper.cpp streaming integration
 │   ├── llm_processor.py         # 🤖 NEW: LLM deduplication processor
+│   ├── sdl_device_mapper.py     # 🎛️ NEW: SDL/PyAudio device mapping
 │   ├── audio_capture.py         # 🎤 Audio recording logic
 │   ├── transcript_processor.py  # 🧠 Legacy whisper.cpp HTTP client
 │   ├── whisper_cpp_client.py    # 🚀 Legacy whisper.cpp HTTP client
@@ -272,6 +277,12 @@ WHISPER_MODEL_PATH="./whisper.cpp/models/ggml-base.en.bin"
 - **Max Tokens**: 1000
 - **Processing**: Async with queue management
 
+### Audio Device Mapping
+- **Frontend**: Shows SDL devices (what whisper.cpp can use)
+- **Whisper.cpp**: Uses SDL device IDs for audio capture
+- **Monitoring**: Uses PyAudio device IDs for real-time audio levels
+- **Mapping**: Automatic translation between SDL and PyAudio device IDs
+
 ### Server Settings
 - **Host**: `0.0.0.0` (accessible from network)
 - **Port**: `5001`
@@ -281,17 +292,27 @@ WHISPER_MODEL_PATH="./whisper.cpp/models/ggml-base.en.bin"
 
 ### Required Hardware
 1. **Microphone**: USB mic, headset, or AirPods
-2. **Virtual Audio Device**: BlackHole for system audio capture
+2. **Virtual Audio Device**: BlackHole for system audio capture (optional)
 
 ### Setup Instructions
 ```bash
-# Install BlackHole for system audio capture
+# Install BlackHole for system audio capture (optional)
 brew install blackhole-2ch
 
 # Grant microphone permissions
 # System Preferences → Security & Privacy → Privacy → Microphone
 # ✅ Check "Terminal" or your Python app
 ```
+
+### Dual Audio Source Setup (Optional)
+For capturing both microphone and system audio simultaneously:
+
+1. **Install BlackHole**: `brew install blackhole-2ch`
+2. **Configure Multi-Output Device** in Audio MIDI Setup
+3. **Route system audio** through BlackHole
+4. **Select devices** in the Flask app interface
+
+The app automatically detects and maps audio devices correctly between PyAudio (monitoring) and SDL (whisper.cpp).
 
 **Detailed setup**: See `AUDIO_SETUP.md`
 
@@ -322,6 +343,8 @@ brew install blackhole-2ch
 ### ✅ Working Features (NEW!)
 - ✅ **Dual-panel interface** with raw and processed transcripts
 - ✅ **Whisper.cpp streaming** (no separate server needed)
+- ✅ **Dual audio source capture** - microphone AND system audio simultaneously
+- ✅ **Smart device mapping** - automatic SDL/PyAudio device translation
 - ✅ **LLM deduplication** using Lambda Labs API
 - ✅ **Real-time transcript accumulation** with manual processing
 - ✅ **Keyboard shortcuts** (Enter for LLM processing)
@@ -331,6 +354,8 @@ brew install blackhole-2ch
 
 ### 🎯 Key Improvements
 - **3-5x faster transcription** with whisper.cpp streaming
+- **Dual audio source capture** - microphone and system audio simultaneously
+- **Smart device mapping** - automatic SDL/PyAudio device ID translation
 - **Intelligent deduplication** eliminates overlapping segments
 - **User-controlled processing** with Enter key trigger
 - **Comparison view** between raw and processed transcripts

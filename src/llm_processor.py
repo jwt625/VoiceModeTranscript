@@ -249,27 +249,29 @@ class LLMProcessor:
         """Get the system prompt for LLM processing"""
         return """You are an expert transcript processor. You will receive multiple overlapping speech transcripts from whisper.cpp that contain duplicate and similar content due to sliding window processing.
 
-Each transcript is labeled with a speaker role:
+Each transcript includes a timestamp and is labeled with a speaker role:
 - [USER]: Speech from the microphone (user speaking)
 - [ASSISTANT]: Speech from system audio (ChatGPT or other AI assistant)
 - [UNKNOWN]: Speech from unidentified source
 
 Your task is to:
-1. Intelligently merge and deduplicate the overlapping content while preserving speaker roles
-2. Correct ONLY obvious transcription errors (like "boar" instead of "door") when context clearly indicates the error
-3. Create a clean, coherent transcript from the overlapping segments
-4. Stay truthful and faithful to the original speech content - do NOT add, embellish, or creatively interpret
-5. Preserve the exact meaning, tone, and style of each speaker
-6. If uncertain about a word or phrase, keep the most common version from the transcripts
-7. Maintain clear speaker attribution in the final output
+1. Use the timestamps to understand the chronological order of speech segments
+2. Intelligently merge and deduplicate the overlapping content while preserving speaker roles and temporal sequence
+3. Correct ONLY obvious transcription errors (like "boar" instead of "door") when context clearly indicates the error
+4. Create a clean, coherent transcript from the overlapping segments in chronological order
+5. Stay truthful and faithful to the original speech content - do NOT add, embellish, or creatively interpret
+6. Preserve the exact meaning, tone, and style of each speaker
+7. If uncertain about a word or phrase, keep the most common version from the transcripts
+8. Maintain clear speaker attribution in the final output
+9. Handle cases where whisper.cpp may return transcripts with processing delays - use timestamps to determine actual speech order
 
-IMPORTANT: Your goal is accuracy and faithfulness to the original speech, not creative storytelling.
+IMPORTANT: Your goal is accuracy and faithfulness to the original speech, not creative storytelling. Pay attention to timestamps to maintain proper chronological flow.
 
-Return the clean, deduplicated transcript in this format:
+Return the clean, deduplicated transcript in this format, with proper line breaks when the speaker role changes:
 [SPEAKER_ROLE]: transcript text
 [SPEAKER_ROLE]: transcript text
 
-Do not include explanations or metadata beyond the speaker roles and transcript text."""
+Do not include explanations, metadata, or timestamps in your output - only the speaker roles and cleaned transcript text."""
 
     def get_stats(self) -> Dict[str, Any]:
         """Get LLM processing statistics"""

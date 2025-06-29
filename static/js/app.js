@@ -945,12 +945,16 @@ class TranscriptRecorder {
         // Create processed transcript item
         const item = document.createElement('div');
         item.className = 'processed-transcript-item';
+
+        // Convert line breaks to HTML for proper display
+        const formattedText = this.formatTextWithLineBreaks(result.processed_text);
+
         item.innerHTML = `
             <div class="header">
                 <span>Processed ${result.original_transcript_count} transcripts</span>
                 <span>${new Date(result.timestamp).toLocaleTimeString()}</span>
             </div>
-            <div class="text">${result.processed_text}</div>
+            <div class="text">${formattedText}</div>
             <div class="footer">
                 <span>Model: ${result.llm_model}</span>
                 <span>Time: ${result.processing_time.toFixed(2)}s</span>
@@ -962,6 +966,17 @@ class TranscriptRecorder {
 
         // Show processed actions
         this.processedActions.style.display = 'flex';
+    }
+
+    formatTextWithLineBreaks(text) {
+        // Convert newlines to HTML line breaks and escape HTML characters
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/\n/g, '<br>');
     }
 
     toggleRawPanel() {
