@@ -32,6 +32,9 @@ class TranscriptRecorder {
         this.setupKeyboardListeners();
         this.checkMobileCompatibility();
 
+        // Recover server state on page load
+        this.recoverServerState();
+
         // Load audio devices on startup
         this.loadAudioDevices();
     }
@@ -221,6 +224,10 @@ class TranscriptRecorder {
                         break;
                     case 'heartbeat':
                         console.log('💓 Heartbeat received');
+                        // Handle heartbeat with optional state sync
+                        if (data.state_sync) {
+                            this.validateStateSync(data.state_sync);
+                        }
                         break;
                     default:
                         console.log('❓ Unknown SSE message type:', data.type, data);
@@ -933,6 +940,12 @@ class TranscriptRecorder {
     }
 
     addProcessedTranscript(result) {
+        // Validate required fields
+        if (!result || !result.processed_text) {
+            console.error('Invalid processed transcript result:', result);
+            return;
+        }
+
         this.processedTranscripts.push(result);
         this.processedTranscriptCount++;
 
@@ -951,13 +964,13 @@ class TranscriptRecorder {
 
         item.innerHTML = `
             <div class="header">
-                <span>Processed ${result.original_transcript_count} transcripts</span>
-                <span>${new Date(result.timestamp).toLocaleTimeString()}</span>
+                <span>Processed ${result.original_transcript_count || 0} transcripts</span>
+                <span>${result.timestamp ? new Date(result.timestamp).toLocaleTimeString() : 'Unknown time'}</span>
             </div>
             <div class="text">${formattedText}</div>
             <div class="footer">
-                <span>Model: ${result.llm_model}</span>
-                <span>Time: ${result.processing_time.toFixed(2)}s</span>
+                <span>Model: ${result.llm_model || 'Unknown'}</span>
+                <span>Time: ${result.processing_time ? result.processing_time.toFixed(2) : '0.00'}s</span>
             </div>
         `;
 
@@ -969,6 +982,11 @@ class TranscriptRecorder {
     }
 
     formatTextWithLineBreaks(text) {
+        // Handle undefined or null text
+        if (!text) {
+            return '';
+        }
+
         // Convert newlines to HTML line breaks and escape HTML characters
         return text
             .replace(/&/g, '&amp;')
@@ -1497,6 +1515,239 @@ class TranscriptRecorder {
         if (this.isRecording) {
             this.showSuccessMessage('Device changes will apply to the next recording session');
         }
+    }
+
+    // State Recovery and Synchronization Methods
+    async recoverServerState() {
+        try {
+            console.log('🔄 Recovering server state...');
+            const response = await fetch('/api/status');
+            const serverState = await response.json();
+
+            console.log('📊 Server state:', serverState);
+
+            if (serverState.is_recording) {
+                console.log('✅ Server is recording, syncing client state');
+
+                // Sync recording state
+                this.updateRecordingState(serverState);
+
+                // Restore accumulated transcript counts
+                if (serverState.processors && serverState.processors.accumulated_transcripts) {
+                    const counts = serverState.processors.accumulated_transcripts;
+                    this.rawTranscriptCount = counts.total;
+                    this.accumulatedCount.textContent = counts.total;
+                    this.rawCountSpan.textContent = counts.total;
+
+                    console.log(`📝 Restored transcript counts: ${counts.microphone} mic + ${counts.system} system = ${counts.total} total`);
+
+                    // Enable LLM processing if transcripts exist
+                    if (counts.total > 0) {
+                        this.processLLMBtn.disabled = false;
+                        this.llmStatus.style.display = 'block';
+                    }
+                }
+
+                // Restore LLM processor state
+                if (serverState.llm_processor) {
+                    const llmState = serverState.llm_processor;
+                    console.log(`🤖 LLM processor state: processing=${llmState.is_processing}, queue=${llmState.queue_length}, total_processed=${llmState.total_processed}`);
+
+                    if (llmState.is_processing) {
+                        this.isLLMProcessing = true;
+                        this.processLLMBtn.disabled = true;
+                        this.llmStatusText.textContent = 'Processing with LLM...';
+                        this.llmSpinner.style.display = 'block';
+                        this.llmStatus.style.display = 'block';
+                        console.log('🔄 Restored LLM processing state');
+                    }
+
+                    if (llmState.queue_length > 0) {
+                        console.log(`📋 LLM queue has ${llmState.queue_length} pending jobs`);
+                    }
+                }
+
+                // Restore processed transcript counts
+                if (serverState.processed_transcripts) {
+                    const processedCount = serverState.processed_transcripts.session_count;
+                    this.processedTranscriptCount = processedCount;
+                    this.processedCountSpan.textContent = processedCount;
+                    console.log(`📄 Restored processed transcript count: ${processedCount}`);
+                }
+
+                // Optionally restore recent transcripts from database
+                if (serverState.session_id) {
+                    await this.restoreRecentTranscripts(serverState.session_id);
+                    await this.restoreProcessedTranscripts(serverState.session_id);
+                }
+
+                this.showNotification('Synchronized with ongoing recording session', 'info');
+            } else {
+                console.log('ℹ️ Server is not recording, client state is correct');
+            }
+        } catch (error) {
+            console.error('❌ Failed to recover server state:', error);
+            this.showNotification('Failed to sync with server state', 'error');
+        }
+    }
+
+    validateStateSync(serverState) {
+        const clientRecording = this.isRecording;
+        const serverRecording = serverState.is_recording;
+
+        let stateChanged = false;
+
+        // Check recording state mismatch
+        if (clientRecording !== serverRecording) {
+            console.warn('⚠️ Recording state mismatch detected!');
+            console.warn(`Client: ${clientRecording ? 'recording' : 'not recording'}`);
+            console.warn(`Server: ${serverRecording ? 'recording' : 'not recording'}`);
+
+            // Sync with server state
+            this.updateRecordingState(serverState);
+            stateChanged = true;
+
+            // Show user notification
+            const message = serverRecording
+                ? 'Synchronized with ongoing recording session'
+                : 'Recording session ended, state synchronized';
+            this.showNotification(message, 'info');
+        }
+
+        // Check LLM processing state mismatch (only if we have LLM state)
+        if (serverState.llm_processor) {
+            const clientLLMProcessing = this.isLLMProcessing;
+            const serverLLMProcessing = serverState.llm_processor.is_processing;
+
+            if (clientLLMProcessing !== serverLLMProcessing) {
+                console.warn('⚠️ LLM processing state mismatch detected!');
+                console.warn(`Client LLM processing: ${clientLLMProcessing}`);
+                console.warn(`Server LLM processing: ${serverLLMProcessing}`);
+
+                // Sync LLM processing state
+                this.isLLMProcessing = serverLLMProcessing;
+                this.processLLMBtn.disabled = serverLLMProcessing;
+
+                if (serverLLMProcessing) {
+                    this.llmStatusText.textContent = 'Processing with LLM...';
+                    this.llmSpinner.style.display = 'block';
+                    this.llmStatus.style.display = 'block';
+                } else {
+                    this.llmStatusText.textContent = 'Ready';
+                    this.llmSpinner.style.display = 'none';
+                    // Keep LLM status visible if we have transcripts
+                    if (this.rawTranscriptCount === 0) {
+                        this.llmStatus.style.display = 'none';
+                    }
+                }
+
+                stateChanged = true;
+                console.log('✅ LLM processing state synchronized');
+            }
+        }
+
+        if (stateChanged) {
+            console.log('✅ All states synchronized with server');
+        }
+    }
+
+    async restoreRecentTranscripts(sessionId) {
+        try {
+            console.log(`🔄 Restoring recent transcripts for session: ${sessionId}`);
+            const response = await fetch(`/api/raw-transcripts/${sessionId}`);
+            const data = await response.json();
+
+            if (data.transcripts && data.transcripts.length > 0) {
+                console.log(`📝 Restoring ${data.transcripts.length} recent transcripts`);
+
+                // Display recent transcripts to show context (last 10)
+                const recentTranscripts = data.transcripts.slice(-10);
+                recentTranscripts.forEach(transcript => {
+                    this.addRawTranscript({
+                        type: 'raw_transcript',
+                        data: transcript,
+                        accumulated_count: this.rawTranscriptCount
+                    });
+                });
+
+                console.log('✅ Recent transcripts restored');
+            } else {
+                console.log('ℹ️ No recent transcripts to restore');
+            }
+        } catch (error) {
+            console.error('❌ Failed to restore recent transcripts:', error);
+        }
+    }
+
+    async restoreProcessedTranscripts(sessionId) {
+        try {
+            console.log(`🔄 Restoring processed transcripts for session: ${sessionId}`);
+            const response = await fetch(`/api/processed-transcripts/${sessionId}`);
+            const data = await response.json();
+
+            if (data.transcripts && data.transcripts.length > 0) {
+                console.log(`📄 Restoring ${data.transcripts.length} processed transcripts`);
+
+                // Display processed transcripts
+                data.transcripts.forEach(transcript => {
+                    // addProcessedTranscript expects the result object directly
+                    this.addProcessedTranscript({
+                        status: 'success',
+                        ...transcript
+                    });
+                });
+
+                console.log('✅ Processed transcripts restored');
+            } else {
+                console.log('ℹ️ No processed transcripts to restore');
+            }
+        } catch (error) {
+            console.error('❌ Failed to restore processed transcripts:', error);
+        }
+    }
+
+    showNotification(message, type = 'info') {
+        // Create notification element if it doesn't exist
+        let notification = document.getElementById('state-notification');
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.id = 'state-notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 6px;
+                color: white;
+                font-weight: 500;
+                z-index: 1000;
+                max-width: 300px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                transition: all 0.3s ease;
+            `;
+            document.body.appendChild(notification);
+        }
+
+        // Set notification style based on type
+        const colors = {
+            info: '#3b82f6',
+            error: '#ef4444',
+            success: '#10b981',
+            warning: '#f59e0b'
+        };
+
+        notification.style.backgroundColor = colors[type] || colors.info;
+        notification.textContent = message;
+        notification.style.display = 'block';
+        notification.style.opacity = '1';
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 300);
+        }, 5000);
     }
 }
 

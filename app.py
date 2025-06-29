@@ -117,14 +117,27 @@ def index():
 def stream():
     """Server-Sent Events endpoint for real-time updates"""
     def event_stream():
+        heartbeat_counter = 0
         while True:
             try:
                 # Get data from queue (blocks until available)
                 data = stream_queue.get(timeout=1)
                 yield f"data: {json.dumps(data)}\n\n"
             except queue.Empty:
-                # Send heartbeat to keep connection alive
-                yield "data: {\"type\": \"heartbeat\"}\n\n"
+                # Send heartbeat with periodic state validation
+                heartbeat_counter += 1
+                heartbeat_data = {"type": "heartbeat", "timestamp": datetime.now().isoformat()}
+
+                # Include state validation every 10 heartbeats (every ~10 seconds)
+                if heartbeat_counter % 10 == 0:
+                    heartbeat_data["state_sync"] = {
+                        "is_recording": recording_state['is_recording'],
+                        "session_id": recording_state['session_id'],
+                        "start_time": recording_state['start_time']
+                    }
+                    print(f"🔄 Sending state sync heartbeat: {heartbeat_data['state_sync']}")
+
+                yield f"data: {json.dumps(heartbeat_data)}\n\n"
             except Exception as e:
                 print(f"SSE stream error: {e}")
                 break
@@ -139,11 +152,81 @@ def stream():
 
 @app.route('/api/status')
 def get_status():
-    """Get current recording status"""
+    """Get current recording status with detailed information"""
+    global mic_whisper_processor, system_whisper_processor, audio_capture, llm_processor
+
+    # Get processor states
+    mic_active = False
+    system_active = False
+    mic_count = 0
+    system_count = 0
+
+    if mic_whisper_processor:
+        mic_active = mic_whisper_processor.is_streaming if hasattr(mic_whisper_processor, 'is_streaming') else False
+        try:
+            mic_transcripts = mic_whisper_processor.get_accumulated_transcripts()
+            mic_count = len(mic_transcripts) if mic_transcripts else 0
+        except:
+            mic_count = 0
+
+    if system_whisper_processor:
+        system_active = system_whisper_processor.is_streaming if hasattr(system_whisper_processor, 'is_streaming') else False
+        try:
+            system_transcripts = system_whisper_processor.get_accumulated_transcripts()
+            system_count = len(system_transcripts) if system_transcripts else 0
+        except:
+            system_count = 0
+
+    # Get audio capture state
+    audio_capture_active = False
+    if audio_capture:
+        audio_capture_active = audio_capture.is_recording if hasattr(audio_capture, 'is_recording') else False
+
+    # Get LLM processor state
+    llm_state = {
+        'available': llm_processor is not None,
+        'is_processing': False,
+        'queue_length': 0,
+        'total_processed': 0,
+        'failed_requests': 0
+    }
+
+    if llm_processor:
+        llm_state.update({
+            'is_processing': llm_processor.is_processing,
+            'queue_length': len(llm_processor.processing_queue),
+            'total_processed': llm_processor.total_processed,
+            'failed_requests': llm_processor.failed_requests
+        })
+
+    # Get processed transcript count for current session
+    processed_count = 0
+    if recording_state['session_id']:
+        try:
+            session_transcripts = get_session_transcripts(recording_state['session_id'], 'processed')
+            processed_count = len(session_transcripts.get('processed', []))
+        except:
+            processed_count = 0
+
     return jsonify({
         'is_recording': recording_state['is_recording'],
         'session_id': recording_state['session_id'],
-        'start_time': recording_state['start_time']
+        'start_time': recording_state['start_time'],
+        'processors': {
+            'microphone_active': mic_active,
+            'system_active': system_active,
+            'accumulated_transcripts': {
+                'microphone': mic_count,
+                'system': system_count,
+                'total': mic_count + system_count
+            }
+        },
+        'llm_processor': llm_state,
+        'processed_transcripts': {
+            'session_count': processed_count
+        },
+        'audio_capture_active': audio_capture_active,
+        'server_timestamp': datetime.now().isoformat()
     })
 
 @app.route('/api/start', methods=['POST'])
