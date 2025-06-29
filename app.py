@@ -179,129 +179,110 @@ def start_recording():
 
         print(f"🎛️ Device selection request - Mic: {requested_mic_device}, System: {requested_system_device} ({'output' if is_output_device else 'input'})")
 
-        # Initialize audio capture for volume monitoring first to validate devices
+        # Initialize SDL device mapper
+        from src.sdl_device_mapper import SDLDeviceMapper
+        device_mapper = SDLDeviceMapper()
+        device_info = device_mapper.get_device_info()
+
+        print(f"🔧 SDL Device Mapping: {device_info['sdl_device_count']} SDL devices, {device_info['mapped_devices']} mapped to PyAudio")
+
+        # Initialize audio capture for volume monitoring
         audio_capture = AudioCapture()
         audio_capture.callback = on_audio_chunk
 
-        # Try to find and set audio devices (microphone and system audio)
+        # Try to find and set audio devices using SDL device mapping
         try:
+            # Get PyAudio devices for audio level monitoring
             input_devices, output_devices = audio_capture.list_devices()
-            print(f"🎧 Found {len(input_devices)} input devices, {len(output_devices)} output devices")
+            print(f"🎧 Found {len(input_devices)} PyAudio input devices, {len(output_devices)} output devices")
 
-            # Debug: List all input devices to help identify the correct BlackHole device
-            print("📋 Available input devices:")
-            for device_id, device_name in input_devices:
-                print(f"   Device {device_id}: {device_name}")
-            print("📋 Available output devices:")
-            for device_id, device_name in output_devices:
-                print(f"   Device {device_id}: {device_name}")
+            # Debug: Show SDL devices available for whisper.cpp
+            print("📋 Available SDL devices for whisper.cpp:")
+            for device in device_info['devices']:
+                print(f"   SDL Device {device['sdl_id']}: {device['display_name']} (PyAudio: {device['pyaudio_id']})")
 
-            # Use requested devices or auto-detect
-            mic_device_id = requested_mic_device
-            system_device_id = requested_system_device
+            # Frontend now sends SDL device IDs, convert to PyAudio IDs for monitoring
+            mic_sdl_id = requested_mic_device  # SDL device ID from frontend
+            system_sdl_id = requested_system_device  # SDL device ID from frontend
 
-            # Validate requested devices exist
-            available_input_ids = [dev_id for dev_id, _ in input_devices]
-            available_output_ids = [dev_id for dev_id, _ in output_devices]
+            # Get corresponding PyAudio IDs for audio level monitoring
+            mic_pyaudio_id = device_mapper.get_pyaudio_device_id(mic_sdl_id) if mic_sdl_id is not None else None
+            system_pyaudio_id = device_mapper.get_pyaudio_device_id(system_sdl_id) if system_sdl_id is not None else None
 
-            if mic_device_id is not None and mic_device_id not in available_input_ids:
-                print(f"⚠️  Requested microphone device {mic_device_id} not found, auto-detecting...")
-                mic_device_id = None
+            print(f"🎛️ Device mapping - Mic SDL:{mic_sdl_id}→PyAudio:{mic_pyaudio_id}, System SDL:{system_sdl_id}→PyAudio:{system_pyaudio_id}")
 
-            # Handle system audio device validation
-            if system_device_id is not None:
-                if is_output_device:
-                    # User selected an output device, try to find corresponding input device
-                    if system_device_id not in available_output_ids:
-                        print(f"⚠️  Requested output device {system_device_id} not found, auto-detecting...")
-                        system_device_id = None
-                    else:
-                        # Try to find corresponding input device with same name
-                        output_name = next((name for dev_id, name in output_devices if dev_id == system_device_id), None)
-                        if output_name:
-                            # Look for input device with same name
-                            corresponding_input = next((dev_id for dev_id, name in input_devices if name == output_name), None)
-                            if corresponding_input:
-                                system_device_id = corresponding_input
-                                print(f"🔄 Found corresponding input device for '{output_name}': {system_device_id}")
-                            else:
-                                print(f"⚠️  No corresponding input device found for output '{output_name}', trying loopback...")
-                                system_device_id = None
-                else:
-                    # User selected an input device directly
-                    if system_device_id not in available_input_ids:
-                        print(f"⚠️  Requested system audio input device {system_device_id} not found, auto-detecting...")
-                        system_device_id = None
+            # Validate SDL devices exist
+            available_sdl_ids = [device['sdl_id'] for device in device_info['devices']]
 
-            # Auto-detect if not specified or invalid
-            if mic_device_id is None:
-                for device_id, device_name in input_devices:
-                    device_name_lower = device_name.lower()
-                    # Prefer AirPods, then any non-loopback device
-                    if 'airpods' in device_name_lower:
-                        mic_device_id = device_id
-                        print(f"🎤 Auto-detected preferred microphone: {device_name} (ID: {device_id})")
+            if mic_sdl_id is not None and mic_sdl_id not in available_sdl_ids:
+                print(f"⚠️  Requested microphone SDL device {mic_sdl_id} not found, auto-detecting...")
+                mic_sdl_id = None
+                mic_pyaudio_id = None
+
+            # Handle system audio device validation (now using SDL IDs)
+            if system_sdl_id is not None and system_sdl_id not in available_sdl_ids:
+                print(f"⚠️  Requested system audio SDL device {system_sdl_id} not found, auto-detecting...")
+                system_sdl_id = None
+                system_pyaudio_id = None
+
+            # Auto-detect SDL devices if not specified or invalid
+            if mic_sdl_id is None:
+                # Look for microphone in SDL devices
+                for device in device_info['devices']:
+                    device_name_lower = device['display_name'].lower()
+                    if 'airpods' in device_name_lower or ('microphone' in device_name_lower and 'blackhole' not in device_name_lower):
+                        mic_sdl_id = device['sdl_id']
+                        mic_pyaudio_id = device['pyaudio_id']
+                        print(f"🎤 Auto-detected microphone: {device['display_name']} (SDL: {mic_sdl_id}, PyAudio: {mic_pyaudio_id})")
                         break
-                    elif not any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
-                        if mic_device_id is None:  # Only set if not already found
-                            mic_device_id = device_id
-                            print(f"🎤 Auto-detected fallback microphone: {device_name} (ID: {device_id})")
 
-            if system_device_id is None:
-                for device_id, device_name in input_devices:
-                    device_name_lower = device_name.lower()
-                    # Prefer loopback devices for system audio capture
-                    if 'loopback' in device_name_lower:
-                        system_device_id = device_id
-                        print(f"🔊 Auto-detected system audio device (loopback): {device_name} (ID: {device_id})")
-                        break
-                    elif 'blackhole' in device_name_lower and 'output' not in device_name_lower:
-                        # BlackHole input device (not direct output)
-                        system_device_id = device_id
-                        print(f"🔊 Auto-detected system audio device (BlackHole input): {device_name} (ID: {device_id})")
-                        break
-                    elif any(keyword in device_name_lower for keyword in ['soundflower', 'system audio']):
-                        system_device_id = device_id
-                        print(f"🔊 Auto-detected system audio device: {device_name} (ID: {device_id})")
+            if system_sdl_id is None:
+                # Look for system audio device in SDL devices
+                for device in device_info['devices']:
+                    device_name_lower = device['display_name'].lower()
+                    if 'blackhole' in device_name_lower or 'loopback' in device_name_lower or 'soundflower' in device_name_lower:
+                        system_sdl_id = device['sdl_id']
+                        system_pyaudio_id = device['pyaudio_id']
+                        print(f"🔊 Auto-detected system audio: {device['display_name']} (SDL: {system_sdl_id}, PyAudio: {system_pyaudio_id})")
                         break
 
             # Print final device selection
-            if mic_device_id is not None:
-                mic_name = next((name for dev_id, name in input_devices if dev_id == mic_device_id), "Unknown")
-                print(f"✅ Using microphone: {mic_name} (ID: {mic_device_id})")
+            if mic_sdl_id is not None:
+                mic_name = next((device['display_name'] for device in device_info['devices'] if device['sdl_id'] == mic_sdl_id), "Unknown")
+                print(f"✅ Using microphone: {mic_name} (SDL: {mic_sdl_id}, PyAudio: {mic_pyaudio_id})")
             else:
                 print("⚠️  No microphone device available")
 
-            if system_device_id is not None:
-                sys_name = next((name for dev_id, name in input_devices if dev_id == system_device_id), "Unknown")
-                print(f"✅ Using system audio: {sys_name} (ID: {system_device_id})")
+            if system_sdl_id is not None:
+                sys_name = next((device['display_name'] for device in device_info['devices'] if device['sdl_id'] == system_sdl_id), "Unknown")
+                print(f"✅ Using system audio: {sys_name} (SDL: {system_sdl_id}, PyAudio: {system_pyaudio_id})")
             else:
                 print("⚠️  No system audio device available")
                 print("   To enable system audio capture:")
                 print("   1. Install BlackHole: brew install blackhole-2ch")
                 print("   2. Route audio through BlackHole using Multi-Output Device")
 
-            # Set both devices
-            audio_capture.set_devices(mic_device_id=mic_device_id, system_device_id=system_device_id)
-            print(f"🎚️ Audio devices configured - Mic: {mic_device_id}, System: {system_device_id}")
+            # Set PyAudio devices for audio level monitoring
+            audio_capture.set_devices(mic_device_id=mic_pyaudio_id, system_device_id=system_pyaudio_id)
+            print(f"🎚️ Audio devices configured - Mic PyAudio: {mic_pyaudio_id}, System PyAudio: {system_pyaudio_id}")
 
         except Exception as e:
             print(f"⚠️  Error setting up audio devices: {e}")
 
-        # Initialize processors with validated device IDs
+        # Initialize processors with SDL device IDs for whisper.cpp
         mic_whisper_processor = WhisperStreamProcessor(
             callback=on_whisper_transcript,
             audio_source="microphone",
-            audio_device_id=mic_device_id
+            audio_device_id=mic_sdl_id  # Use SDL device ID for whisper.cpp
         )
 
         # System audio processor (if system device is available)
         system_whisper_processor = None
-        if system_device_id is not None:
+        if system_sdl_id is not None:
             system_whisper_processor = WhisperStreamProcessor(
                 callback=on_whisper_transcript,
                 audio_source="system",
-                audio_device_id=system_device_id
+                audio_device_id=system_sdl_id  # Use SDL device ID for whisper.cpp
             )
             print("🔊 System audio transcription enabled")
         else:
@@ -335,7 +316,7 @@ def start_recording():
         # Start whisper.cpp streaming for system audio (if available)
         system_success = True
         if system_whisper_processor:
-            print(f"🔧 Attempting to start system audio transcription with device {system_device_id}")
+            print(f"🔧 Attempting to start system audio transcription with SDL device {system_sdl_id}")
             system_success = system_whisper_processor.start_streaming(session_id)
             if system_success:
                 print("🔊 System audio transcription started successfully")
@@ -723,18 +704,34 @@ def get_all_processed_transcripts():
 
 @app.route('/api/audio-devices')
 def get_audio_devices():
-    """Get list of available audio devices"""
+    """Get list of available audio devices using SDL device mapping"""
     try:
-        from src.audio_capture import AudioCapture
-        temp_capture = AudioCapture()
-        input_devices, output_devices = temp_capture.list_devices()
-        temp_capture.cleanup()
+        from src.sdl_device_mapper import SDLDeviceMapper
+
+        mapper = SDLDeviceMapper()
+        device_info = mapper.get_device_info()
+
+        # Format devices for frontend dropdown
+        input_devices = []
+        for device in device_info['devices']:
+            input_devices.append({
+                'id': device['sdl_id'],  # Use SDL ID for whisper.cpp
+                'name': device['display_name'],
+                'pyaudio_id': device['pyaudio_id'],  # For audio level monitoring
+                'available_for_whisper': device['available_for_whisper'],
+                'available_for_monitoring': device['available_for_monitoring']
+            })
 
         return jsonify({
             'success': True,
-            'input_devices': [{'id': dev_id, 'name': name} for dev_id, name in input_devices],
-            'output_devices': [{'id': dev_id, 'name': name} for dev_id, name in output_devices],
-            'system_audio_note': 'For system audio capture, install BlackHole, Soundflower, or similar loopback device'
+            'input_devices': input_devices,
+            'output_devices': [],  # Not needed since we use SDL devices
+            'device_mapping_info': {
+                'sdl_devices': device_info['sdl_device_count'],
+                'pyaudio_devices': device_info['pyaudio_device_count'],
+                'mapped_devices': device_info['mapped_devices']
+            },
+            'system_audio_note': 'Devices shown are SDL devices that whisper.cpp can use directly'
         })
 
     except Exception as e:
