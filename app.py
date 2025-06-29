@@ -354,6 +354,167 @@ def toggle_display():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/database/stats')
+def get_database_stats():
+    """Get database statistics for inspection"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get counts from all tables
+        cursor.execute('SELECT COUNT(*) FROM raw_transcripts')
+        raw_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM processed_transcripts')
+        processed_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM sessions')
+        sessions_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM transcripts')
+        legacy_count = cursor.fetchone()[0]
+
+        # Get recent sessions
+        cursor.execute('''
+            SELECT DISTINCT session_id, COUNT(*) as transcript_count,
+                   MIN(timestamp) as first_transcript, MAX(timestamp) as last_transcript
+            FROM raw_transcripts
+            GROUP BY session_id
+            ORDER BY last_transcript DESC
+            LIMIT 10
+        ''')
+        recent_sessions = []
+        for row in cursor.fetchall():
+            recent_sessions.append({
+                'session_id': row[0],
+                'transcript_count': row[1],
+                'first_transcript': row[2],
+                'last_transcript': row[3]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'raw_transcripts': raw_count,
+                'processed_transcripts': processed_count,
+                'sessions': sessions_count,
+                'legacy_transcripts': legacy_count
+            },
+            'recent_sessions': recent_sessions
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/raw-transcripts')
+def get_all_raw_transcripts():
+    """Get all raw transcripts with pagination"""
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        offset = (page - 1) * limit
+
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get total count
+        cursor.execute('SELECT COUNT(*) FROM raw_transcripts')
+        total_count = cursor.fetchone()[0]
+
+        # Get paginated results
+        cursor.execute('''
+            SELECT id, session_id, text, timestamp, sequence_number, confidence, processing_time
+            FROM raw_transcripts
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        ''', (limit, offset))
+
+        transcripts = []
+        for row in cursor.fetchall():
+            transcripts.append({
+                'id': row[0],
+                'session_id': row[1],
+                'text': row[2],
+                'timestamp': row[3],
+                'sequence_number': row[4],
+                'confidence': row[5],
+                'processing_time': row[6]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'transcripts': transcripts,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/processed-transcripts')
+def get_all_processed_transcripts():
+    """Get all processed transcripts with pagination"""
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        offset = (page - 1) * limit
+
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get total count
+        cursor.execute('SELECT COUNT(*) FROM processed_transcripts')
+        total_count = cursor.fetchone()[0]
+
+        # Get paginated results
+        cursor.execute('''
+            SELECT id, session_id, processed_text, original_transcript_ids,
+                   original_transcript_count, llm_model, processing_time, timestamp
+            FROM processed_transcripts
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        ''', (limit, offset))
+
+        transcripts = []
+        for row in cursor.fetchall():
+            transcripts.append({
+                'id': row[0],
+                'session_id': row[1],
+                'processed_text': row[2],
+                'original_transcript_ids': json.loads(row[3]),
+                'original_transcript_count': row[4],
+                'llm_model': row[5],
+                'processing_time': row[6],
+                'timestamp': row[7]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'transcripts': transcripts,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def extract_new_content(last_text, current_text):
     """Extract new content from current transcription compared to last one"""
     return current_text

@@ -23,10 +23,14 @@ class TranscriptRecorder {
         this.rawPanelVisible = true;
         this.processedPanelVisible = true;
 
+        // Mobile detection
+        this.isMobile = this.detectMobile();
+
         this.initializeElements();
         this.setupEventListeners();
         this.setupSSEConnection();
         this.setupKeyboardListeners();
+        this.checkMobileCompatibility();
     }
     
     initializeElements() {
@@ -42,6 +46,10 @@ class TranscriptRecorder {
         this.sessionInfo = document.getElementById('session-info');
         this.sessionIdSpan = document.getElementById('session-id');
         this.durationSpan = document.getElementById('duration');
+
+        // Audio level elements (FIX: Initialize missing elements)
+        this.micLevel = document.getElementById('mic-level');
+        this.systemLevel = document.getElementById('system-level');
 
         // LLM status elements
         this.llmStatus = document.getElementById('llm-status');
@@ -63,6 +71,16 @@ class TranscriptRecorder {
         this.saveProcessedBtn = document.getElementById('save-processed-btn');
         this.exportProcessedBtn = document.getElementById('export-processed-btn');
         this.processedActions = document.querySelector('.processed-actions');
+
+        // Database inspector elements
+        this.databaseBtn = document.getElementById('database-btn');
+        this.databaseModal = document.getElementById('database-modal');
+        this.closeModalBtn = document.getElementById('close-modal-btn');
+        this.statsGrid = document.getElementById('stats-grid');
+        this.tableContent = document.getElementById('table-content');
+        this.rawTab = document.getElementById('raw-tab');
+        this.processedTab = document.getElementById('processed-tab');
+        this.sessionsTab = document.getElementById('sessions-tab');
 
         // Quality monitor (updated)
         this.whisperStatus = document.getElementById('whisper-status');
@@ -92,6 +110,32 @@ class TranscriptRecorder {
         }
         if (this.exportProcessedBtn) {
             this.exportProcessedBtn.addEventListener('click', () => this.exportProcessedTranscript());
+        }
+
+        // Database inspector
+        if (this.databaseBtn) {
+            this.databaseBtn.addEventListener('click', () => this.openDatabaseInspector());
+        }
+        if (this.closeModalBtn) {
+            this.closeModalBtn.addEventListener('click', () => this.closeDatabaseInspector());
+        }
+        if (this.rawTab) {
+            this.rawTab.addEventListener('click', () => this.showDatabaseTable('raw'));
+        }
+        if (this.processedTab) {
+            this.processedTab.addEventListener('click', () => this.showDatabaseTable('processed'));
+        }
+        if (this.sessionsTab) {
+            this.sessionsTab.addEventListener('click', () => this.showDatabaseTable('sessions'));
+        }
+
+        // Close modal when clicking outside
+        if (this.databaseModal) {
+            this.databaseModal.addEventListener('click', (e) => {
+                if (e.target === this.databaseModal) {
+                    this.closeDatabaseInspector();
+                }
+            });
         }
     }
 
@@ -141,6 +185,10 @@ class TranscriptRecorder {
                     case 'raw_transcript':
                         console.log('📝 Raw transcript received:', data);
                         this.addRawTranscript(data);
+                        break;
+                    case 'audio_level':
+                        // FIX: Handle audio level updates
+                        this.updateAudioLevels(data);
                         break;
                     case 'llm_processing_start':
                         console.log('🤖 LLM processing started:', data);
@@ -277,11 +325,25 @@ class TranscriptRecorder {
         this.lastSpeaker = null;
         this.lastUpdateTime = null;
 
-        this.transcriptContent.innerHTML = `
+        // Clear both panels
+        this.rawTranscriptContent.innerHTML = `
             <div class="transcript-placeholder">
-                <p>🎙️ Transcript cleared. Click "Start Recording" to begin again.</p>
+                <p>🎙️ Raw transcripts cleared. Click "Start Recording" to begin again.</p>
             </div>
         `;
+
+        this.processedTranscriptContent.innerHTML = `
+            <div class="transcript-placeholder">
+                <p>🤖 Processed transcripts cleared. Press "Process with LLM" after recording.</p>
+            </div>
+        `;
+
+        // Reset counts
+        this.rawTranscriptCount = 0;
+        this.processedTranscriptCount = 0;
+        this.rawCountSpan.textContent = '0';
+        this.processedCountSpan.textContent = '0';
+        this.accumulatedCount.textContent = '0';
 
         this.updateStats();
         this.updateQualityMetrics();
@@ -381,9 +443,9 @@ class TranscriptRecorder {
         // Mark as processing initially (will be removed when finalized)
         entry.classList.add('processing');
 
-        // Add to transcript
-        this.transcriptContent.appendChild(entry);
-        this.transcriptContent.scrollTop = this.transcriptContent.scrollHeight;
+        // Add to raw transcript panel (legacy method - should use addRawTranscript instead)
+        this.rawTranscriptContent.appendChild(entry);
+        this.rawTranscriptContent.scrollTop = this.rawTranscriptContent.scrollHeight;
 
         // Store current message state
         this.currentMessage = {
@@ -451,8 +513,8 @@ class TranscriptRecorder {
             singleElement.textContent = this.currentMessage.text;
         }
 
-        // Scroll to bottom
-        this.transcriptContent.scrollTop = this.transcriptContent.scrollHeight;
+        // Scroll to bottom (legacy method)
+        this.rawTranscriptContent.scrollTop = this.rawTranscriptContent.scrollHeight;
 
         this.lastUpdateTime = timestamp;
     }
@@ -564,10 +626,11 @@ class TranscriptRecorder {
     }
     
     clearTranscriptPlaceholder() {
-        const placeholder = this.transcriptContent.querySelector('.transcript-placeholder');
-        if (placeholder) {
-            placeholder.remove();
-        }
+        // This method is legacy - we now have separate methods for each panel
+        // Keep for compatibility but make it safe
+        console.log('Legacy clearTranscriptPlaceholder called - using new panel methods');
+        this.clearRawTranscriptPlaceholder();
+        this.clearProcessedTranscriptPlaceholder();
     }
     
     updateStats() {
@@ -895,6 +958,316 @@ class TranscriptRecorder {
         setTimeout(() => {
             successDiv.remove();
         }, 5000);
+    }
+
+    // Database Inspector Methods
+    async openDatabaseInspector() {
+        try {
+            this.databaseModal.style.display = 'flex';
+
+            // Load database stats
+            await this.loadDatabaseStats();
+
+            // Show raw transcripts by default
+            await this.showDatabaseTable('raw');
+
+        } catch (error) {
+            console.error('Error opening database inspector:', error);
+            this.showErrorMessage('Failed to load database information');
+        }
+    }
+
+    closeDatabaseInspector() {
+        this.databaseModal.style.display = 'none';
+    }
+
+    async loadDatabaseStats() {
+        try {
+            const response = await fetch('/api/database/stats');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayDatabaseStats(result.stats, result.recent_sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load stats');
+            }
+        } catch (error) {
+            console.error('Error loading database stats:', error);
+            this.statsGrid.innerHTML = '<p>Error loading database statistics</p>';
+        }
+    }
+
+    displayDatabaseStats(stats, recentSessions) {
+        this.statsGrid.innerHTML = `
+            <div class="stat-item">
+                <div class="stat-value">${stats.raw_transcripts}</div>
+                <div class="stat-label">Raw Transcripts</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${stats.processed_transcripts}</div>
+                <div class="stat-label">Processed Transcripts</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${stats.sessions}</div>
+                <div class="stat-label">Sessions</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${recentSessions.length}</div>
+                <div class="stat-label">Active Sessions</div>
+            </div>
+        `;
+    }
+
+    async showDatabaseTable(tableType) {
+        // Update tab states
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+        if (tableType === 'raw') {
+            this.rawTab.classList.add('active');
+            await this.loadRawTranscripts();
+        } else if (tableType === 'processed') {
+            this.processedTab.classList.add('active');
+            await this.loadProcessedTranscripts();
+        } else if (tableType === 'sessions') {
+            this.sessionsTab.classList.add('active');
+            await this.loadRecentSessions();
+        }
+    }
+
+    async loadRawTranscripts() {
+        try {
+            const response = await fetch('/api/database/raw-transcripts?limit=20');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayRawTranscripts(result.transcripts, result.pagination);
+            } else {
+                throw new Error(result.error || 'Failed to load raw transcripts');
+            }
+        } catch (error) {
+            console.error('Error loading raw transcripts:', error);
+            this.tableContent.innerHTML = '<p>Error loading raw transcripts</p>';
+        }
+    }
+
+    displayRawTranscripts(transcripts, pagination) {
+        if (transcripts.length === 0) {
+            this.tableContent.innerHTML = '<p>No raw transcripts found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Text</th>
+                        <th>Timestamp</th>
+                        <th>Sequence</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transcripts.map(t => `
+                        <tr>
+                            <td class="text-truncate">${t.session_id}</td>
+                            <td class="text-truncate">${t.text}</td>
+                            <td>${new Date(t.timestamp).toLocaleString()}</td>
+                            <td>${t.sequence_number}</td>
+                            <td>${t.confidence ? (t.confidence * 100).toFixed(1) + '%' : 'N/A'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div style="margin-top: 15px; text-align: center; color: #8e8e93;">
+                Showing ${transcripts.length} of ${pagination.total_count} transcripts
+            </div>
+        `;
+
+        this.tableContent.innerHTML = tableHtml;
+    }
+
+    async loadProcessedTranscripts() {
+        try {
+            const response = await fetch('/api/database/processed-transcripts?limit=10');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayProcessedTranscripts(result.transcripts, result.pagination);
+            } else {
+                throw new Error(result.error || 'Failed to load processed transcripts');
+            }
+        } catch (error) {
+            console.error('Error loading processed transcripts:', error);
+            this.tableContent.innerHTML = '<p>Error loading processed transcripts</p>';
+        }
+    }
+
+    displayProcessedTranscripts(transcripts, pagination) {
+        if (transcripts.length === 0) {
+            this.tableContent.innerHTML = '<p>No processed transcripts found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Processed Text</th>
+                        <th>Original Count</th>
+                        <th>LLM Model</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transcripts.map(t => `
+                        <tr>
+                            <td class="text-truncate">${t.session_id}</td>
+                            <td class="text-truncate">${t.processed_text}</td>
+                            <td>${t.original_transcript_count}</td>
+                            <td>${t.llm_model}</td>
+                            <td>${new Date(t.timestamp).toLocaleString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div style="margin-top: 15px; text-align: center; color: #8e8e93;">
+                Showing ${transcripts.length} of ${pagination.total_count} processed transcripts
+            </div>
+        `;
+
+        this.tableContent.innerHTML = tableHtml;
+    }
+
+    async loadRecentSessions() {
+        try {
+            const response = await fetch('/api/database/stats');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayRecentSessions(result.recent_sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load sessions');
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            this.tableContent.innerHTML = '<p>Error loading sessions</p>';
+        }
+    }
+
+    displayRecentSessions(sessions) {
+        if (sessions.length === 0) {
+            this.tableContent.innerHTML = '<p>No recent sessions found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Transcript Count</th>
+                        <th>First Transcript</th>
+                        <th>Last Transcript</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sessions.map(s => {
+                        const start = new Date(s.first_transcript);
+                        const end = new Date(s.last_transcript);
+                        const duration = Math.round((end - start) / 1000 / 60); // minutes
+                        return `
+                            <tr>
+                                <td class="text-truncate">${s.session_id}</td>
+                                <td>${s.transcript_count}</td>
+                                <td>${start.toLocaleString()}</td>
+                                <td>${end.toLocaleString()}</td>
+                                <td>${duration} min</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+
+        this.tableContent.innerHTML = tableHtml;
+    }
+
+    // Mobile Detection and Compatibility Methods
+    detectMobile() {
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+        // Check for mobile devices
+        if (/android/i.test(userAgent)) {
+            return 'android';
+        }
+
+        if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+            return 'ios';
+        }
+
+        // Check for mobile-like screen sizes
+        if (window.innerWidth <= 768) {
+            return 'mobile';
+        }
+
+        return false;
+    }
+
+    checkMobileCompatibility() {
+        if (this.isMobile) {
+            console.warn('📱 Mobile device detected:', this.isMobile);
+
+            // Check HTTPS requirement
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                this.showErrorMessage(
+                    'HTTPS is required for microphone access on mobile devices. ' +
+                    'Please use HTTPS or access via localhost for testing.'
+                );
+            }
+
+            // Check for getUserMedia support
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                this.showErrorMessage(
+                    'Your mobile browser does not support microphone access. ' +
+                    'Please try a different browser or update your current browser.'
+                );
+            }
+
+            // Show mobile-specific warning
+            this.showMobileWarning();
+        }
+    }
+
+    showMobileWarning() {
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'mobile-warning';
+        warningDiv.innerHTML = `
+            <div style="background: #ff9500; color: white; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <strong>📱 Mobile Device Detected</strong><br>
+                <small>
+                    • Microphone access may require user interaction<br>
+                    • whisper.cpp streaming is not available on mobile<br>
+                    • Some features may be limited<br>
+                    • For best experience, use a desktop browser
+                </small>
+                <button onclick="this.parentElement.parentElement.remove()"
+                        style="float: right; background: none; border: none; color: white; font-size: 18px; cursor: pointer;">×</button>
+            </div>
+        `;
+
+        // Insert at top of container
+        const container = document.querySelector('.container');
+        container.insertBefore(warningDiv, container.firstChild);
+
+        // Auto-remove after 15 seconds
+        setTimeout(() => {
+            if (warningDiv.parentElement) {
+                warningDiv.remove();
+            }
+        }, 15000);
     }
 }
 

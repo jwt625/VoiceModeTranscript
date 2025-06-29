@@ -27,6 +27,7 @@
             <button id="stop-btn" class="btn btn-stop" disabled>⏹️ Stop Recording</button>
             <button id="process-llm-btn" class="btn btn-llm" disabled>🤖 Process with LLM</button>
             <button id="clear-btn" class="btn btn-clear">🗑️ Clear Transcript</button>
+            <button id="database-btn" class="btn btn-database">🗄️ Database Inspector</button>
         </div>
 
         <div class="llm-status" id="llm-status" style="display: none;">
@@ -115,6 +116,34 @@
                 <div class="metric">
                     <label>Session Duration:</label>
                     <span id="session-duration">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Inspector Modal -->
+        <div id="database-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🗄️ Database Inspector</h3>
+                    <button id="close-modal-btn" class="btn btn-close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="database-stats" id="database-stats">
+                        <h4>📊 Database Statistics</h4>
+                        <div class="stats-grid" id="stats-grid">
+                            <!-- Stats will be populated here -->
+                        </div>
+                    </div>
+                    <div class="database-tables">
+                        <div class="table-tabs">
+                            <button id="raw-tab" class="tab-btn active">Raw Transcripts</button>
+                            <button id="processed-tab" class="tab-btn">Processed Transcripts</button>
+                            <button id="sessions-tab" class="tab-btn">Recent Sessions</button>
+                        </div>
+                        <div class="table-content" id="table-content">
+                            <!-- Table content will be populated here -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
