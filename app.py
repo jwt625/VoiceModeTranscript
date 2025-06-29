@@ -166,7 +166,9 @@ def start_recording():
         # Handle output device selection (format: "output_X")
         requested_system_device = None
         is_output_device = False
-        if requested_system_device_raw:
+        user_explicitly_disabled_system_audio = False
+
+        if requested_system_device_raw is not None:
             if isinstance(requested_system_device_raw, str) and requested_system_device_raw.startswith('output_'):
                 requested_system_device = int(requested_system_device_raw.replace('output_', ''))
                 is_output_device = True
@@ -175,7 +177,9 @@ def start_recording():
                 requested_system_device = requested_system_device_raw
                 print(f"🎛️ Input device selected for system audio: {requested_system_device}")
         else:
-            print("🔍 No system device specified in request")
+            # When system_device_id is not in the request, it means user selected "No system audio capture"
+            user_explicitly_disabled_system_audio = True
+            print("🔍 User explicitly disabled system audio capture (no system_device_id in request)")
 
         print(f"🎛️ Device selection request - Mic: {requested_mic_device}, System: {requested_system_device} ({'output' if is_output_device else 'input'})")
 
@@ -236,8 +240,8 @@ def start_recording():
                         print(f"🎤 Auto-detected microphone: {device['display_name']} (SDL: {mic_sdl_id}, PyAudio: {mic_pyaudio_id})")
                         break
 
-            if system_sdl_id is None:
-                # Look for system audio device in SDL devices
+            if system_sdl_id is None and not user_explicitly_disabled_system_audio:
+                # Look for system audio device in SDL devices (only if user didn't explicitly disable)
                 for device in device_info['devices']:
                     device_name_lower = device['display_name'].lower()
                     if 'blackhole' in device_name_lower or 'loopback' in device_name_lower or 'soundflower' in device_name_lower:
@@ -276,15 +280,17 @@ def start_recording():
             audio_device_id=mic_sdl_id  # Use SDL device ID for whisper.cpp
         )
 
-        # System audio processor (if system device is available)
+        # System audio processor (if system device is available and user didn't explicitly disable)
         system_whisper_processor = None
-        if system_sdl_id is not None:
+        if system_sdl_id is not None and not user_explicitly_disabled_system_audio:
             system_whisper_processor = WhisperStreamProcessor(
                 callback=on_whisper_transcript,
                 audio_source="system",
                 audio_device_id=system_sdl_id  # Use SDL device ID for whisper.cpp
             )
             print("🔊 System audio transcription enabled")
+        elif user_explicitly_disabled_system_audio:
+            print("🔇 System audio transcription disabled (user choice)")
         else:
             print("⚠️  System audio transcription disabled (no system audio device)")
 
