@@ -147,7 +147,7 @@ def get_status():
 @app.route('/api/start', methods=['POST'])
 def start_recording():
     """Start recording and transcription with whisper.cpp streaming"""
-    global whisper_processor, llm_processor, recording_state
+    global whisper_processor, llm_processor, audio_capture, recording_state
 
     try:
         if recording_state['is_recording']:
@@ -156,6 +156,34 @@ def start_recording():
         # Initialize processors
         whisper_processor = WhisperStreamProcessor(callback=on_whisper_transcript)
         llm_processor = LLMProcessor(callback=on_llm_result)
+
+        # Initialize audio capture for volume monitoring
+        audio_capture = AudioCapture()
+        audio_capture.callback = on_audio_chunk
+
+        # Try to find and set system audio device (for macOS, look for loopback devices)
+        try:
+            input_devices, output_devices = audio_capture.list_devices()
+            print(f"🎧 Found {len(input_devices)} input devices, {len(output_devices)} output devices")
+
+            # Look for system audio/loopback devices
+            system_device_id = None
+            for device_id, device_name in input_devices:
+                device_name_lower = device_name.lower()
+                if any(keyword in device_name_lower for keyword in ['soundflower', 'loopback', 'blackhole', 'system audio']):
+                    system_device_id = device_id
+                    print(f"🔊 Found system audio device: {device_name} (ID: {device_id})")
+                    break
+
+            if system_device_id is None:
+                print("⚠️  No system audio loopback device found. System volume monitoring disabled.")
+                print("   To enable system audio capture, install BlackHole or Soundflower")
+
+            # Set devices (mic will auto-detect default, system only if found)
+            audio_capture.set_devices(system_device_id=system_device_id)
+
+        except Exception as e:
+            print(f"⚠️  Error setting up audio devices: {e}")
 
         # Start recording
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -187,10 +215,18 @@ def start_recording():
                 'message': 'Check that whisper.cpp binary and model are available'
             }), 500
 
+        # Start audio capture for volume monitoring (separate from whisper.cpp)
+        try:
+            audio_capture.start_recording(session_id)
+            print("🎚️ Audio level monitoring started")
+        except Exception as e:
+            print(f"⚠️ Audio level monitoring failed: {e}")
+            # Don't fail the whole recording if audio monitoring fails
+
         return jsonify({
             'success': True,
             'session_id': session_id,
-            'message': 'Whisper.cpp streaming started',
+            'message': 'Whisper.cpp streaming started with audio monitoring',
             'processor_type': 'whisper_stream'
         })
 
@@ -201,7 +237,7 @@ def start_recording():
 @app.route('/api/stop', methods=['POST'])
 def stop_recording():
     """Stop whisper.cpp streaming and transcription"""
-    global whisper_processor, recording_state
+    global whisper_processor, audio_capture, recording_state
 
     try:
         if not recording_state['is_recording']:
@@ -213,6 +249,14 @@ def stop_recording():
         stats = {}
         if whisper_processor:
             stats = whisper_processor.stop_streaming()
+
+        # Stop audio capture
+        if audio_capture:
+            try:
+                audio_capture.stop_recording()
+                print("🎚️ Audio level monitoring stopped")
+            except Exception as e:
+                print(f"⚠️ Error stopping audio capture: {e}")
 
         # Update state
         recording_state.update({
@@ -235,7 +279,7 @@ def stop_recording():
 
         return jsonify({
             'success': True,
-            'message': 'Whisper.cpp streaming stopped',
+            'message': 'Whisper.cpp streaming and audio monitoring stopped',
             'session_id': session_id,
             'stats': stats
         })
@@ -510,6 +554,26 @@ def get_all_processed_transcripts():
                 'total_count': total_count,
                 'total_pages': (total_count + limit - 1) // limit
             }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/audio-devices')
+def get_audio_devices():
+    """Get list of available audio devices"""
+    try:
+        from src.audio_capture import AudioCapture
+        temp_capture = AudioCapture()
+        input_devices, output_devices = temp_capture.list_devices()
+        temp_capture.cleanup()
+
+        return jsonify({
+            'success': True,
+            'input_devices': [{'id': dev_id, 'name': name} for dev_id, name in input_devices],
+            'output_devices': [{'id': dev_id, 'name': name} for dev_id, name in output_devices],
+            'system_audio_note': 'For system audio capture, install BlackHole, Soundflower, or similar loopback device'
         })
 
     except Exception as e:

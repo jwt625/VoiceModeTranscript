@@ -222,39 +222,64 @@ class TranscriptRecorder {
         try {
             this.updateStatus('recording', 'Starting...');
             this.startBtn.disabled = true;
-            
+
+            // Request microphone permission first (only for mobile devices)
+            if (this.isMobile) {
+                console.log('🎤 Mobile device detected - requesting microphone permission...');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    console.log('✅ Microphone permission granted');
+
+                    // Stop the test stream immediately
+                    stream.getTracks().forEach(track => track.stop());
+
+                    this.showSuccessMessage('Microphone access granted! Starting recording...');
+                } catch (permissionError) {
+                    console.error('❌ Microphone permission denied:', permissionError);
+                    this.updateStatus('error', 'Microphone access denied');
+                    this.startBtn.disabled = false;
+
+                    this.showErrorMessage(
+                        'Microphone access is required for recording. ' +
+                        'Please allow microphone access and try again. ' +
+                        'On mobile, you may need to refresh the page after granting permission.'
+                    );
+                    return;
+                }
+            }
+
             const response = await fetch('/api/start', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
-            
+
             const result = await response.json();
-            
+
             if (response.ok) {
                 this.isRecording = true;
                 this.sessionId = result.session_id;
                 this.startTime = new Date();
-                
+
                 this.updateStatus('recording', 'Recording');
                 this.startBtn.disabled = true;
                 this.stopBtn.disabled = false;
-                
+
                 this.showSessionInfo();
                 this.startDurationTimer();
                 this.clearTranscriptPlaceholder();
-                
+
                 console.log('Recording started:', result);
             } else {
                 throw new Error(result.error || 'Failed to start recording');
             }
-            
+
         } catch (error) {
             console.error('Error starting recording:', error);
             this.updateStatus('error', 'Error: ' + error.message);
             this.startBtn.disabled = false;
-            
+
             // Show error message to user
             this.showErrorMessage(error.message);
         }
