@@ -1710,54 +1710,37 @@ class TranscriptRecorder {
     }
 
     addRawTranscriptToPanel(transcript) {
-        const transcriptDiv = document.createElement('div');
-        transcriptDiv.className = 'transcript-message';
+        // Use the same format as live recording by calling the existing addRawTranscript method
+        // but adapt the data structure to match what it expects
+        const eventData = {
+            data: {
+                text: transcript.text,
+                timestamp: transcript.timestamp,
+                audio_source: transcript.audio_source,
+                sequence_number: transcript.sequence_number,
+                confidence: transcript.confidence
+            },
+            accumulated_count: this.rawTranscriptCount + 1
+        };
 
-        const timestamp = new Date(transcript.timestamp).toLocaleTimeString();
-        const confidence = transcript.confidence ? ` (${(transcript.confidence * 100).toFixed(1)}%)` : '';
-        const source = transcript.audio_source ? ` [${transcript.audio_source}]` : '';
-
-        transcriptDiv.innerHTML = `
-            <div class="message-header">
-                <span class="timestamp">${timestamp}</span>
-                <span class="sequence">#${transcript.sequence_number}</span>
-                <span class="source">${source}</span>
-                <span class="confidence">${confidence}</span>
-            </div>
-            <div class="message-text">${transcript.text}</div>
-        `;
-
-        this.rawTranscriptContent.appendChild(transcriptDiv);
-        this.rawTranscripts.push(transcript);
-        this.rawTranscriptCount++;
-        this.rawCountSpan.textContent = this.rawTranscriptCount;
-
-        // Scroll to bottom
-        this.rawTranscriptContent.scrollTop = this.rawTranscriptContent.scrollHeight;
+        // Call the existing live recording method for consistent formatting
+        this.addRawTranscript(eventData);
     }
 
     addProcessedTranscriptToPanel(transcript) {
-        const transcriptDiv = document.createElement('div');
-        transcriptDiv.className = 'transcript-message processed';
+        // Use the same format as live recording by calling the existing addProcessedTranscript method
+        // but adapt the data structure to match what it expects
+        const result = {
+            status: 'success',
+            processed_text: transcript.processed_text,
+            timestamp: transcript.timestamp,
+            original_transcript_count: transcript.original_transcript_count,
+            llm_model: transcript.llm_model,
+            processing_time: transcript.processing_time || 0
+        };
 
-        const timestamp = new Date(transcript.timestamp).toLocaleTimeString();
-
-        transcriptDiv.innerHTML = `
-            <div class="message-header">
-                <span class="timestamp">${timestamp}</span>
-                <span class="model">${transcript.llm_model}</span>
-                <span class="count">${transcript.original_transcript_count} originals</span>
-            </div>
-            <div class="message-text">${transcript.processed_text}</div>
-        `;
-
-        this.processedTranscriptContent.appendChild(transcriptDiv);
-        this.processedTranscripts.push(transcript);
-        this.processedTranscriptCount++;
-        this.processedCountSpan.textContent = this.processedTranscriptCount;
-
-        // Scroll to bottom
-        this.processedTranscriptContent.scrollTop = this.processedTranscriptContent.scrollHeight;
+        // Call the existing live recording method for consistent formatting
+        this.addProcessedTranscript(result);
     }
 
     // Note: Session viewing now loads directly into main panels
