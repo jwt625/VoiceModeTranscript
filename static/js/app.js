@@ -37,6 +37,9 @@ class TranscriptRecorder {
 
         // Load audio devices on startup
         this.loadAudioDevices();
+
+        // Load auto-processing settings
+        this.loadAutoProcessingSettings();
     }
     
     initializeElements() {
@@ -68,6 +71,11 @@ class TranscriptRecorder {
         this.llmSpinner = document.getElementById('llm-spinner');
         this.accumulatedCount = document.getElementById('accumulated-count');
 
+        // Auto-processing elements
+        this.autoProcessingEnabled = document.getElementById('auto-processing-enabled');
+        this.autoProcessingInterval = document.getElementById('auto-processing-interval');
+        this.autoProcessingStatus = document.getElementById('auto-processing-status');
+
         // Dual panel elements
         this.rawTranscriptContent = document.getElementById('raw-transcript-content');
         this.processedTranscriptContent = document.getElementById('processed-transcript-content');
@@ -92,6 +100,12 @@ class TranscriptRecorder {
         this.rawTab = document.getElementById('raw-tab');
         this.processedTab = document.getElementById('processed-tab');
         this.sessionsTab = document.getElementById('sessions-tab');
+        this.sessionBrowserTab = document.getElementById('session-browser-tab');
+
+        // Session browser elements
+        this.sessionBrowserControls = document.getElementById('session-browser-controls');
+        this.loadSessionBtn = document.getElementById('load-session-btn');
+        this.selectedSessionInfo = document.getElementById('selected-session-info');
 
         // Quality monitor (updated)
         this.whisperStatus = document.getElementById('whisper-status');
@@ -110,6 +124,10 @@ class TranscriptRecorder {
 
         // LLM processing
         this.processLLMBtn.addEventListener('click', () => this.processWithLLM());
+
+        // Auto-processing controls
+        this.autoProcessingEnabled.addEventListener('change', () => this.updateAutoProcessingSettings());
+        this.autoProcessingInterval.addEventListener('change', () => this.updateAutoProcessingSettings());
 
         // Panel toggles
         this.toggleRawBtn.addEventListener('click', () => this.toggleRawPanel());
@@ -143,6 +161,14 @@ class TranscriptRecorder {
         }
         if (this.sessionsTab) {
             this.sessionsTab.addEventListener('click', () => this.showDatabaseTable('sessions'));
+        }
+        if (this.sessionBrowserTab) {
+            this.sessionBrowserTab.addEventListener('click', () => this.showSessionBrowser());
+        }
+
+        // Session browser controls
+        if (this.loadSessionBtn) {
+            this.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
         }
 
         // Close modal when clicking outside
@@ -218,6 +244,10 @@ class TranscriptRecorder {
                         console.log('❌ LLM processing error:', data);
                         this.handleLLMProcessingError(data);
                         break;
+                    case 'auto_processing_triggered':
+                        console.log('🤖 Auto-processing triggered:', data);
+                        this.handleAutoProcessingTriggered(data);
+                        break;
                     case 'whisper_error':
                         console.log('❌ Whisper error:', data);
                         this.handleWhisperError(data);
@@ -240,6 +270,10 @@ class TranscriptRecorder {
     
     async startRecording() {
         try {
+            // Clear any session viewing mode and transcripts for safety
+            this.exitSessionViewingMode();
+            this.clearTranscript();
+
             this.updateStatus('recording', 'Starting...');
             this.startBtn.disabled = true;
 
@@ -701,21 +735,31 @@ class TranscriptRecorder {
     }
     
     updateStats() {
-        this.segmentCountSpan.textContent = this.segmentCount;
-        this.wordCountSpan.textContent = this.wordCount;
+        // Update stats if elements exist (legacy elements may not be present)
+        if (this.segmentCountSpan) {
+            this.segmentCountSpan.textContent = this.segmentCount;
+        }
+        if (this.wordCountSpan) {
+            this.wordCountSpan.textContent = this.wordCount;
+        }
     }
     
     updateQualityMetrics() {
-        // Average confidence
-        if (this.confidenceCount > 0) {
-            const avgConfidence = this.confidenceSum / this.confidenceCount;
-            this.avgConfidenceSpan.textContent = `${Math.round(avgConfidence * 100)}%`;
-        } else {
-            this.avgConfidenceSpan.textContent = '--';
+        // Update quality metrics if elements exist (legacy elements may not be present)
+        if (this.avgConfidenceSpan) {
+            // Average confidence
+            if (this.confidenceCount > 0) {
+                const avgConfidence = this.confidenceSum / this.confidenceCount;
+                this.avgConfidenceSpan.textContent = `${Math.round(avgConfidence * 100)}%`;
+            } else {
+                this.avgConfidenceSpan.textContent = '--';
+            }
         }
-        
+
         // Processing delay (placeholder for now)
-        this.processingDelaySpan.textContent = '< 2s';
+        if (this.processingDelaySpan) {
+            this.processingDelaySpan.textContent = '< 2s';
+        }
     }
     
     getConfidenceClass(confidence) {
@@ -731,7 +775,7 @@ class TranscriptRecorder {
         errorDiv.innerHTML = `
             <div style="background: #ff3b30; color: white; padding: 15px; border-radius: 8px; margin: 10px 0;">
                 <strong>Error:</strong> ${message}
-                <br><small>Check the console for more details or see AUDIO_SETUP.md for help.</small>
+                <br><small>Check the browser console (F12) for more technical details.</small>
             </div>
         `;
         
@@ -765,6 +809,11 @@ class TranscriptRecorder {
         this.startBtn.disabled = true;
         this.stopBtn.disabled = false;
         this.processLLMBtn.disabled = false;
+
+        // Update auto-processing status
+        if (this.autoProcessingEnabled.checked) {
+            this.autoProcessingStatus.textContent = `Next: ${this.autoProcessingInterval.value} min`;
+        }
     }
 
     handleRecordingStopped(data) {
@@ -784,6 +833,11 @@ class TranscriptRecorder {
         this.startBtn.disabled = false;
         this.stopBtn.disabled = true;
         this.processLLMBtn.disabled = true;
+
+        // Update auto-processing status
+        if (this.autoProcessingEnabled.checked) {
+            this.autoProcessingStatus.textContent = 'Will start with recording';
+        }
     }
 
     addRawTranscript(eventData) {
@@ -932,6 +986,85 @@ class TranscriptRecorder {
         if (this.rawTranscriptCount > 0) {
             this.processLLMBtn.disabled = false;
         }
+    }
+
+    // Auto-processing methods
+    async loadAutoProcessingSettings() {
+        try {
+            const response = await fetch('/api/auto-processing/settings');
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+                this.autoProcessingEnabled.checked = settings.enabled;
+                this.autoProcessingInterval.value = settings.interval_minutes;
+                this.autoProcessingInterval.disabled = !settings.enabled;
+
+                this.updateAutoProcessingStatus(settings);
+            }
+        } catch (error) {
+            console.error('Error loading auto-processing settings:', error);
+        }
+    }
+
+    async updateAutoProcessingSettings() {
+        try {
+            const enabled = this.autoProcessingEnabled.checked;
+            const interval = parseInt(this.autoProcessingInterval.value);
+
+            // Enable/disable interval dropdown
+            this.autoProcessingInterval.disabled = !enabled;
+
+            const response = await fetch('/api/auto-processing/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    enabled: enabled,
+                    interval_minutes: interval
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                this.updateAutoProcessingStatus(result.settings);
+                console.log('Auto-processing settings updated:', result.settings);
+            } else {
+                throw new Error(result.error || 'Failed to update settings');
+            }
+        } catch (error) {
+            console.error('Error updating auto-processing settings:', error);
+            this.showErrorMessage('Failed to update auto-processing settings');
+        }
+    }
+
+    updateAutoProcessingStatus(settings) {
+        if (settings.enabled) {
+            if (this.isRecording) {
+                this.autoProcessingStatus.textContent = `Next: ${settings.interval_minutes} min`;
+            } else {
+                this.autoProcessingStatus.textContent = 'Will start with recording';
+            }
+        } else {
+            this.autoProcessingStatus.textContent = '';
+        }
+    }
+
+    handleAutoProcessingTriggered(data) {
+        console.log('🤖 Auto-processing triggered:', data);
+        this.autoProcessingStatus.textContent = `Auto-processed ${data.transcript_count} transcripts`;
+
+        // Show notification
+        this.showNotification('info', `Auto-processed ${data.transcript_count} transcripts`);
+
+        // Reset status after a few seconds
+        setTimeout(() => {
+            if (this.autoProcessingEnabled.checked && this.isRecording) {
+                this.autoProcessingStatus.textContent = `Next: ${data.interval_minutes} min`;
+            }
+        }, 3000);
     }
 
     handleWhisperError(data) {
@@ -1148,17 +1281,14 @@ class TranscriptRecorder {
     }
 
     async showDatabaseTable(tableType) {
-        // Update tab states
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        // Update tab states using the new method
+        this.updateTabStates(tableType);
 
         if (tableType === 'raw') {
-            this.rawTab.classList.add('active');
             await this.loadRawTranscripts();
         } else if (tableType === 'processed') {
-            this.processedTab.classList.add('active');
             await this.loadProcessedTranscripts();
         } else if (tableType === 'sessions') {
-            this.sessionsTab.classList.add('active');
             await this.loadRecentSessions();
         }
     }
@@ -1322,6 +1452,342 @@ class TranscriptRecorder {
         `;
 
         this.tableContent.innerHTML = tableHtml;
+    }
+
+    // Session Browser Methods
+    async showSessionBrowser() {
+        // Update tab states
+        this.updateTabStates('session-browser');
+
+        // Show session browser controls
+        this.sessionBrowserControls.style.display = 'block';
+
+        // Reset selection state
+        this.selectedSessionId = null;
+        this.loadSessionBtn.disabled = true;
+        this.selectedSessionInfo.textContent = 'No session selected';
+
+        // Load and display sessions as selectable table
+        await this.loadSessionsTable();
+    }
+
+    async loadSessionsTable() {
+        try {
+            const response = await fetch('/api/sessions');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displaySelectableSessions(result.sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load sessions');
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            this.tableContent.innerHTML = '<p>Error loading sessions</p>';
+        }
+    }
+
+    displaySelectableSessions(sessions) {
+        if (sessions.length === 0) {
+            this.tableContent.innerHTML = '<p>No sessions found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Raw Transcripts</th>
+                        <th>Processed Transcripts</th>
+                        <th>Start Time</th>
+                        <th>Audio Sources</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sessions.map(session => `
+                        <tr class="selectable" data-session-id="${session.session_id}">
+                            <td class="text-truncate">${session.display_name}</td>
+                            <td>${session.raw_transcript_count}</td>
+                            <td>${session.processed_transcript_count}</td>
+                            <td>${new Date(session.start_time).toLocaleString()}</td>
+                            <td>${session.audio_sources}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        this.tableContent.innerHTML = tableHtml;
+
+        // Add click listeners to session rows
+        this.addSessionRowListeners();
+    }
+
+    addSessionRowListeners() {
+        const sessionRows = this.tableContent.querySelectorAll('tr.selectable');
+        sessionRows.forEach(row => {
+            row.addEventListener('click', () => this.selectSession(row));
+        });
+    }
+
+    selectSession(row) {
+        // Remove previous selection
+        this.tableContent.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+
+        // Add selection to clicked row
+        row.classList.add('selected');
+
+        // Store selected session ID
+        this.selectedSessionId = row.dataset.sessionId;
+
+        // Update UI
+        this.loadSessionBtn.disabled = false;
+        this.selectedSessionInfo.textContent = `Selected: ${row.cells[0].textContent}`;
+
+        console.log(`📖 Selected session: ${this.selectedSessionId}`);
+    }
+
+    async loadSelectedSession() {
+        if (!this.selectedSessionId) {
+            this.showErrorMessage('No session selected');
+            return;
+        }
+
+        try {
+            // Close the database modal
+            this.closeDatabaseInspector();
+
+            // Clear current transcripts and enter session viewing mode
+            this.enterSessionViewingMode(this.selectedSessionId);
+
+            // Load session transcripts into main panels
+            await this.loadSessionIntoMainPanels(this.selectedSessionId);
+
+        } catch (error) {
+            console.error('Error loading session:', error);
+            this.showErrorMessage('Failed to load session transcripts');
+        }
+    }
+
+    enterSessionViewingMode(sessionId) {
+        // Set session viewing state
+        this.isViewingSession = true;
+        this.viewingSessionId = sessionId;
+
+        // Clear current transcripts
+        this.clearTranscript();
+
+        // Update UI to show we're viewing historical data
+        this.updateStatus('viewing', `Viewing Session: ${sessionId.replace('session_', '')}`);
+
+        // Show session info
+        this.sessionInfo.style.display = 'flex';
+        this.sessionIdSpan.textContent = sessionId;
+        this.durationSpan.textContent = 'Historical';
+
+        // Show dual panels
+        this.llmStatus.style.display = 'block';
+        this.llmStatusText.textContent = 'Historical session loaded';
+
+        // Disable recording controls, enable viewing controls
+        this.startBtn.disabled = false; // Allow starting new recording (will clear session)
+        this.stopBtn.disabled = true;
+        this.processLLMBtn.disabled = true; // Can't process historical data
+
+        console.log(`📖 Entered session viewing mode for: ${sessionId}`);
+    }
+
+    exitSessionViewingMode() {
+        if (this.isViewingSession) {
+            this.isViewingSession = false;
+            this.viewingSessionId = null;
+
+            // Reset UI state
+            this.updateStatus('ready', 'Ready');
+            this.hideSessionInfo();
+
+            console.log('📖 Exited session viewing mode');
+        }
+    }
+
+    async loadSessionIntoMainPanels(sessionId) {
+        try {
+            // Load raw transcripts into left panel
+            const rawResponse = await fetch(`/api/raw-transcripts/${sessionId}?page=1&limit=1000`);
+            const rawResult = await rawResponse.json();
+
+            if (rawResponse.ok && rawResult.transcripts) {
+                this.loadRawTranscriptsIntoPanel(rawResult.transcripts);
+                // Calculate quality metrics from raw transcripts
+                this.calculateQualityMetricsFromTranscripts(rawResult.transcripts);
+            }
+
+            // Load processed transcripts into right panel
+            const processedResponse = await fetch(`/api/processed-transcripts/${sessionId}?page=1&limit=1000`);
+            const processedResult = await processedResponse.json();
+
+            if (processedResponse.ok && processedResult.transcripts) {
+                this.loadProcessedTranscriptsIntoPanel(processedResult.transcripts);
+            }
+
+            this.showNotification('success', `Loaded session: ${sessionId.replace('session_', '')}`);
+
+        } catch (error) {
+            console.error('Error loading session into main panels:', error);
+            this.showErrorMessage('Failed to load session transcripts');
+        }
+    }
+
+    loadRawTranscriptsIntoPanel(transcripts) {
+        // Clear existing content
+        this.rawTranscriptContent.innerHTML = '';
+        this.rawTranscripts = [];
+        this.rawTranscriptCount = 0;
+
+        // Add each transcript to the panel
+        transcripts.forEach(transcript => {
+            this.addRawTranscriptToPanel({
+                text: transcript.text,
+                timestamp: transcript.timestamp,
+                audio_source: transcript.audio_source,
+                sequence_number: transcript.sequence_number,
+                confidence: transcript.confidence
+            });
+        });
+
+        console.log(`📝 Loaded ${transcripts.length} raw transcripts into main panel`);
+    }
+
+    loadProcessedTranscriptsIntoPanel(transcripts) {
+        // Clear existing content
+        this.processedTranscriptContent.innerHTML = '';
+        this.processedTranscripts = [];
+        this.processedTranscriptCount = 0;
+
+        // Add each processed transcript to the panel
+        transcripts.forEach(transcript => {
+            this.addProcessedTranscriptToPanel({
+                processed_text: transcript.processed_text,
+                timestamp: transcript.timestamp,
+                original_transcript_count: transcript.original_transcript_count,
+                llm_model: transcript.llm_model
+            });
+        });
+
+        console.log(`✨ Loaded ${transcripts.length} processed transcripts into main panel`);
+    }
+
+    calculateQualityMetricsFromTranscripts(transcripts) {
+        // Reset metrics
+        this.segmentCount = 0;
+        this.wordCount = 0;
+        this.confidenceSum = 0;
+        this.confidenceCount = 0;
+
+        // Calculate metrics from historical transcripts
+        transcripts.forEach(transcript => {
+            // Count segments
+            this.segmentCount++;
+
+            // Count words
+            if (transcript.text) {
+                this.wordCount += transcript.text.split(/\s+/).filter(word => word.length > 0).length;
+            }
+
+            // Sum confidence scores
+            if (transcript.confidence !== null && transcript.confidence !== undefined) {
+                this.confidenceSum += transcript.confidence;
+                this.confidenceCount++;
+            }
+        });
+
+        console.log(`📊 Calculated metrics: ${this.segmentCount} segments, ${this.wordCount} words, ${this.confidenceCount} confidence scores`);
+
+        // Update the UI with calculated metrics (now safe with our robust methods)
+        this.updateStats();
+        this.updateQualityMetrics();
+    }
+
+    addRawTranscriptToPanel(transcript) {
+        const transcriptDiv = document.createElement('div');
+        transcriptDiv.className = 'transcript-message';
+
+        const timestamp = new Date(transcript.timestamp).toLocaleTimeString();
+        const confidence = transcript.confidence ? ` (${(transcript.confidence * 100).toFixed(1)}%)` : '';
+        const source = transcript.audio_source ? ` [${transcript.audio_source}]` : '';
+
+        transcriptDiv.innerHTML = `
+            <div class="message-header">
+                <span class="timestamp">${timestamp}</span>
+                <span class="sequence">#${transcript.sequence_number}</span>
+                <span class="source">${source}</span>
+                <span class="confidence">${confidence}</span>
+            </div>
+            <div class="message-text">${transcript.text}</div>
+        `;
+
+        this.rawTranscriptContent.appendChild(transcriptDiv);
+        this.rawTranscripts.push(transcript);
+        this.rawTranscriptCount++;
+        this.rawCountSpan.textContent = this.rawTranscriptCount;
+
+        // Scroll to bottom
+        this.rawTranscriptContent.scrollTop = this.rawTranscriptContent.scrollHeight;
+    }
+
+    addProcessedTranscriptToPanel(transcript) {
+        const transcriptDiv = document.createElement('div');
+        transcriptDiv.className = 'transcript-message processed';
+
+        const timestamp = new Date(transcript.timestamp).toLocaleTimeString();
+
+        transcriptDiv.innerHTML = `
+            <div class="message-header">
+                <span class="timestamp">${timestamp}</span>
+                <span class="model">${transcript.llm_model}</span>
+                <span class="count">${transcript.original_transcript_count} originals</span>
+            </div>
+            <div class="message-text">${transcript.processed_text}</div>
+        `;
+
+        this.processedTranscriptContent.appendChild(transcriptDiv);
+        this.processedTranscripts.push(transcript);
+        this.processedTranscriptCount++;
+        this.processedCountSpan.textContent = this.processedTranscriptCount;
+
+        // Scroll to bottom
+        this.processedTranscriptContent.scrollTop = this.processedTranscriptContent.scrollHeight;
+    }
+
+    // Note: Session viewing now loads directly into main panels
+    // The old modal-based session viewing methods have been removed
+
+    updateTabStates(activeTab) {
+        // Remove active class from all tabs
+        this.rawTab.classList.remove('active');
+        this.processedTab.classList.remove('active');
+        this.sessionsTab.classList.remove('active');
+        this.sessionBrowserTab.classList.remove('active');
+
+        // Add active class to the selected tab
+        switch (activeTab) {
+            case 'raw':
+                this.rawTab.classList.add('active');
+                this.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'processed':
+                this.processedTab.classList.add('active');
+                this.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'sessions':
+                this.sessionsTab.classList.add('active');
+                this.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'session-browser':
+                this.sessionBrowserTab.classList.add('active');
+                break;
+        }
     }
 
     // Mobile Detection and Compatibility Methods

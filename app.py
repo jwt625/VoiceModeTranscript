@@ -33,6 +33,14 @@ recording_state = {
     'start_time': None
 }
 
+# Auto-processing state
+auto_processing_state = {
+    'enabled': False,
+    'interval_minutes': 5,
+    'timer': None,
+    'last_processing_time': None
+}
+
 audio_capture = None
 transcript_processor = None
 mic_whisper_processor = None
@@ -106,6 +114,93 @@ def on_llm_result(event_data):
         print("⚠️ Stream queue full, dropping LLM event")
     except Exception as e:
         print(f"❌ Error in LLM callback: {e}")
+
+
+def start_auto_processing_timer():
+    """Start the auto-processing timer if enabled"""
+    global auto_processing_state
+
+    if not auto_processing_state['enabled'] or not recording_state['is_recording']:
+        return
+
+    # Cancel existing timer if any
+    stop_auto_processing_timer()
+
+    interval_seconds = auto_processing_state['interval_minutes'] * 60
+    auto_processing_state['timer'] = threading.Timer(interval_seconds, auto_process_transcripts)
+    auto_processing_state['timer'].daemon = True
+    auto_processing_state['timer'].start()
+
+    print(f"🤖 Auto-processing timer started: {auto_processing_state['interval_minutes']} minutes")
+
+
+def stop_auto_processing_timer():
+    """Stop the auto-processing timer"""
+    global auto_processing_state
+
+    if auto_processing_state['timer']:
+        auto_processing_state['timer'].cancel()
+        auto_processing_state['timer'] = None
+        print("🤖 Auto-processing timer stopped")
+
+
+def auto_process_transcripts():
+    """Automatically process accumulated transcripts"""
+    global mic_whisper_processor, system_whisper_processor, llm_processor, auto_processing_state
+
+    try:
+        if not recording_state['is_recording'] or not auto_processing_state['enabled']:
+            return
+
+        # Check if we have accumulated transcripts
+        accumulated_transcripts = []
+        if mic_whisper_processor:
+            accumulated_transcripts.extend(mic_whisper_processor.get_accumulated_transcripts())
+        if system_whisper_processor:
+            accumulated_transcripts.extend(system_whisper_processor.get_accumulated_transcripts())
+
+        if len(accumulated_transcripts) == 0:
+            print("🤖 Auto-processing: No transcripts to process")
+            # Restart timer for next interval
+            start_auto_processing_timer()
+            return
+
+        print(f"🤖 Auto-processing: Processing {len(accumulated_transcripts)} transcripts")
+
+        # Sort transcripts by timestamp
+        accumulated_transcripts.sort(key=lambda x: x.get('timestamp', ''))
+
+        # Process with LLM asynchronously
+        session_id = recording_state['session_id']
+        job_id = llm_processor.process_transcripts_async(accumulated_transcripts, session_id)
+
+        # Clear accumulated transcripts after sending to LLM
+        mic_whisper_processor.clear_accumulated_transcripts()
+        if system_whisper_processor:
+            system_whisper_processor.clear_accumulated_transcripts()
+
+        # Update last processing time
+        auto_processing_state['last_processing_time'] = datetime.now().isoformat()
+
+        # Send auto-processing notification via SSE
+        try:
+            stream_queue.put({
+                'type': 'auto_processing_triggered',
+                'job_id': job_id,
+                'transcript_count': len(accumulated_transcripts),
+                'interval_minutes': auto_processing_state['interval_minutes'],
+                'timestamp': auto_processing_state['last_processing_time']
+            }, block=False)
+        except queue.Full:
+            print("⚠️ Stream queue full, dropping auto-processing notification")
+
+        # Restart timer for next interval
+        start_auto_processing_timer()
+
+    except Exception as e:
+        print(f"❌ Error in auto-processing: {e}")
+        # Restart timer even on error
+        start_auto_processing_timer()
 
 
 @app.route('/')
@@ -433,6 +528,10 @@ def start_recording():
             print(f"⚠️ Audio level monitoring failed: {e}")
             # Don't fail the whole recording if audio monitoring fails
 
+        # Start auto-processing timer if enabled
+        if auto_processing_state['enabled']:
+            start_auto_processing_timer()
+
         return jsonify({
             'success': True,
             'session_id': session_id,
@@ -474,6 +573,9 @@ def stop_recording():
             except Exception as e:
                 print(f"⚠️ Error stopping audio capture: {e}")
 
+        # Stop auto-processing timer
+        stop_auto_processing_timer()
+
         # Update state
         recording_state.update({
             'is_recording': False,
@@ -493,6 +595,9 @@ def stop_recording():
         except queue.Full:
             print("⚠️ Stream queue full, dropping message")
 
+        # Calculate and save session quality metrics
+        calculate_and_save_session_metrics(session_id)
+
         return jsonify({
             'success': True,
             'message': 'Whisper.cpp streaming and audio monitoring stopped',
@@ -505,11 +610,52 @@ def stop_recording():
 
 @app.route('/api/sessions')
 def get_sessions():
-    """Get list of recording sessions"""
+    """Get list of recording sessions with transcript counts"""
     try:
-        # TODO: Implement database query for sessions
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get sessions with transcript counts from raw_transcripts table
+        cursor.execute('''
+            SELECT
+                session_id,
+                COUNT(*) as raw_transcript_count,
+                MIN(timestamp) as start_time,
+                MAX(timestamp) as end_time,
+                COUNT(DISTINCT audio_source) as audio_sources
+            FROM raw_transcripts
+            GROUP BY session_id
+            ORDER BY start_time DESC
+        ''')
+
         sessions = []
-        return jsonify({'sessions': sessions})
+        for row in cursor.fetchall():
+            session_id = row[0]
+
+            # Get processed transcript count for this session
+            cursor.execute('''
+                SELECT COUNT(*) FROM processed_transcripts WHERE session_id = ?
+            ''', (session_id,))
+            processed_count = cursor.fetchone()[0]
+
+            sessions.append({
+                'session_id': session_id,
+                'raw_transcript_count': row[1],
+                'processed_transcript_count': processed_count,
+                'start_time': row[2],
+                'end_time': row[3],
+                'audio_sources': row[4],
+                'display_name': f"Session {session_id.replace('session_', '')}"
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'sessions': sessions,
+            'total_sessions': len(sessions)
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -576,15 +722,110 @@ def process_llm():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/auto-processing/settings', methods=['GET'])
+def get_auto_processing_settings():
+    """Get current auto-processing settings"""
+    try:
+        return jsonify({
+            'success': True,
+            'settings': {
+                'enabled': auto_processing_state['enabled'],
+                'interval_minutes': auto_processing_state['interval_minutes'],
+                'last_processing_time': auto_processing_state['last_processing_time'],
+                'is_timer_active': auto_processing_state['timer'] is not None
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auto-processing/settings', methods=['POST'])
+def update_auto_processing_settings():
+    """Update auto-processing settings"""
+    global auto_processing_state
+
+    try:
+        data = request.get_json()
+
+        if 'enabled' in data:
+            auto_processing_state['enabled'] = bool(data['enabled'])
+
+        if 'interval_minutes' in data:
+            interval = int(data['interval_minutes'])
+            if interval in [2, 5, 10]:  # Only allow valid intervals
+                auto_processing_state['interval_minutes'] = interval
+            else:
+                return jsonify({'error': 'Invalid interval. Must be 2, 5, or 10 minutes'}), 400
+
+        # Restart timer with new settings if recording is active
+        if recording_state['is_recording']:
+            if auto_processing_state['enabled']:
+                start_auto_processing_timer()
+            else:
+                stop_auto_processing_timer()
+
+        return jsonify({
+            'success': True,
+            'settings': {
+                'enabled': auto_processing_state['enabled'],
+                'interval_minutes': auto_processing_state['interval_minutes'],
+                'last_processing_time': auto_processing_state['last_processing_time'],
+                'is_timer_active': auto_processing_state['timer'] is not None
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/raw-transcripts/<session_id>')
 def get_raw_transcripts(session_id):
-    """Get raw transcripts for a specific session"""
+    """Get raw transcripts for a specific session with pagination"""
     try:
-        transcripts = get_session_transcripts(session_id, 'raw')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        offset = (page - 1) * limit
+
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get total count for this session
+        cursor.execute('SELECT COUNT(*) FROM raw_transcripts WHERE session_id = ?', (session_id,))
+        total_count = cursor.fetchone()[0]
+
+        # Get paginated results
+        cursor.execute('''
+            SELECT id, text, timestamp, sequence_number, confidence, processing_time, audio_source
+            FROM raw_transcripts
+            WHERE session_id = ?
+            ORDER BY sequence_number
+            LIMIT ? OFFSET ?
+        ''', (session_id, limit, offset))
+
+        transcripts = []
+        for row in cursor.fetchall():
+            transcripts.append({
+                'id': row[0],
+                'text': row[1],
+                'timestamp': row[2],
+                'sequence_number': row[3],
+                'confidence': row[4],
+                'processing_time': row[5],
+                'audio_source': row[6]
+            })
+
+        conn.close()
+
         return jsonify({
+            'success': True,
             'session_id': session_id,
-            'transcripts': transcripts.get('raw', []),
-            'count': len(transcripts.get('raw', []))
+            'transcripts': transcripts,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -592,13 +833,53 @@ def get_raw_transcripts(session_id):
 
 @app.route('/api/processed-transcripts/<session_id>')
 def get_processed_transcripts(session_id):
-    """Get processed transcripts for a specific session"""
+    """Get processed transcripts for a specific session with pagination"""
     try:
-        transcripts = get_session_transcripts(session_id, 'processed')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        offset = (page - 1) * limit
+
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get total count for this session
+        cursor.execute('SELECT COUNT(*) FROM processed_transcripts WHERE session_id = ?', (session_id,))
+        total_count = cursor.fetchone()[0]
+
+        # Get paginated results
+        cursor.execute('''
+            SELECT id, processed_text, original_transcript_ids,
+                   original_transcript_count, llm_model, processing_time, timestamp
+            FROM processed_transcripts
+            WHERE session_id = ?
+            ORDER BY timestamp
+            LIMIT ? OFFSET ?
+        ''', (session_id, limit, offset))
+
+        transcripts = []
+        for row in cursor.fetchall():
+            transcripts.append({
+                'id': row[0],
+                'processed_text': row[1],
+                'original_transcript_ids': json.loads(row[2]),
+                'original_transcript_count': row[3],
+                'llm_model': row[4],
+                'processing_time': row[5],
+                'timestamp': row[6]
+            })
+
+        conn.close()
+
         return jsonify({
+            'success': True,
             'session_id': session_id,
-            'transcripts': transcripts.get('processed', []),
-            'count': len(transcripts.get('processed', []))
+            'transcripts': transcripts,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -623,6 +904,23 @@ def toggle_display():
             'panel_type': panel_type,
             'visible': visible,
             'message': f'{panel_type.title()} panel {"shown" if visible else "hidden"}'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sessions/<session_id>/calculate-metrics', methods=['POST'])
+def calculate_session_metrics_endpoint(session_id):
+    """Calculate and save quality metrics for a session"""
+    try:
+        calculate_and_save_session_metrics(session_id)
+        metrics = get_session_quality_metrics(session_id)
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'metrics': metrics
         })
 
     except Exception as e:
@@ -1002,7 +1300,11 @@ def init_database():
             duration INTEGER,
             total_segments INTEGER DEFAULT 0,
             raw_transcript_count INTEGER DEFAULT 0,
-            processed_transcript_count INTEGER DEFAULT 0
+            processed_transcript_count INTEGER DEFAULT 0,
+            total_words INTEGER DEFAULT 0,
+            avg_confidence REAL DEFAULT 0.0,
+            confidence_count INTEGER DEFAULT 0,
+            confidence_sum REAL DEFAULT 0.0
         )
     ''')
 
@@ -1066,6 +1368,31 @@ def init_database():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_timestamp ON raw_transcripts(timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_processed_transcripts_timestamp ON processed_transcripts(timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_transcripts_audio_source ON raw_transcripts(audio_source)')
+
+    # Add quality metrics columns to existing sessions table if they don't exist
+    try:
+        cursor.execute('ALTER TABLE sessions ADD COLUMN total_words INTEGER DEFAULT 0')
+        print("ℹ️  Added total_words column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE sessions ADD COLUMN avg_confidence REAL DEFAULT 0.0')
+        print("ℹ️  Added avg_confidence column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE sessions ADD COLUMN confidence_count INTEGER DEFAULT 0')
+        print("ℹ️  Added confidence_count column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE sessions ADD COLUMN confidence_sum REAL DEFAULT 0.0')
+        print("ℹ️  Added confidence_sum column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     conn.commit()
     conn.close()
@@ -1192,6 +1519,94 @@ def get_session_transcripts(session_id, transcript_type='both'):
     except Exception as e:
         print(f"Error getting session transcripts: {e}")
         return {}
+
+
+def calculate_and_save_session_metrics(session_id):
+    """Calculate quality metrics from raw transcripts and save to sessions table"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get all raw transcripts for this session
+        cursor.execute('''
+            SELECT text, confidence FROM raw_transcripts
+            WHERE session_id = ?
+            ORDER BY sequence_number
+        ''', (session_id,))
+
+        transcripts = cursor.fetchall()
+
+        if not transcripts:
+            return
+
+        # Calculate metrics
+        total_segments = len(transcripts)
+        total_words = 0
+        confidence_sum = 0.0
+        confidence_count = 0
+
+        for text, confidence in transcripts:
+            # Count words (simple split by whitespace)
+            if text:
+                total_words += len(text.split())
+
+            # Sum confidence scores
+            if confidence is not None:
+                confidence_sum += confidence
+                confidence_count += 1
+
+        # Calculate average confidence
+        avg_confidence = confidence_sum / confidence_count if confidence_count > 0 else 0.0
+
+        # Update sessions table with calculated metrics
+        cursor.execute('''
+            UPDATE sessions SET
+                total_segments = ?,
+                total_words = ?,
+                avg_confidence = ?,
+                confidence_count = ?,
+                confidence_sum = ?
+            WHERE id = ?
+        ''', (total_segments, total_words, avg_confidence, confidence_count, confidence_sum, session_id))
+
+        conn.commit()
+        conn.close()
+
+        print(f"📊 Updated session {session_id} metrics: {total_segments} segments, {total_words} words, {avg_confidence:.2f} avg confidence")
+
+    except Exception as e:
+        print(f"❌ Error calculating session metrics: {e}")
+
+
+def get_session_quality_metrics(session_id):
+    """Get quality metrics for a session from the database"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT total_segments, total_words, avg_confidence, confidence_count, confidence_sum
+            FROM sessions
+            WHERE id = ?
+        ''', (session_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return {
+                'total_segments': result[0] or 0,
+                'total_words': result[1] or 0,
+                'avg_confidence': result[2] or 0.0,
+                'confidence_count': result[3] or 0,
+                'confidence_sum': result[4] or 0.0
+            }
+        else:
+            return None
+
+    except Exception as e:
+        print(f"❌ Error getting session metrics: {e}")
+        return None
 
 
 if __name__ == '__main__':

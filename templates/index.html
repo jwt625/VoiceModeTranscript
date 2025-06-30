@@ -38,6 +38,18 @@
             <div class="accumulated-count">
                 Raw transcripts: <span id="accumulated-count">0</span>
             </div>
+            <div class="auto-processing-controls">
+                <label class="auto-processing-toggle">
+                    <input type="checkbox" id="auto-processing-enabled">
+                    Auto-process every
+                </label>
+                <select id="auto-processing-interval" disabled>
+                    <option value="2">2 min</option>
+                    <option value="5" selected>5 min</option>
+                    <option value="10">10 min</option>
+                </select>
+                <span class="auto-processing-status" id="auto-processing-status"></span>
+            </div>
         </div>
 
         <div class="audio-levels">
@@ -155,7 +167,20 @@
                             <button id="raw-tab" class="tab-btn active">Raw Transcripts</button>
                             <button id="processed-tab" class="tab-btn">Processed Transcripts</button>
                             <button id="sessions-tab" class="tab-btn">Recent Sessions</button>
+                            <button id="session-browser-tab" class="tab-btn">Session Browser</button>
                         </div>
+
+                        <!-- Session Browser Controls -->
+                        <div class="session-browser-controls" id="session-browser-controls" style="display: none;">
+                            <div class="session-selection">
+                                <button id="load-session-btn" class="btn btn-primary" disabled>Load Selected Session into Main Panels</button>
+                                <span id="selected-session-info" class="selected-session-info">No session selected</span>
+                            </div>
+                            <div class="session-info">
+                                <p>📖 Click on a session in the list below to select it, then click "Load Selected Session" to view its transcripts in the main panels.</p>
+                            </div>
+                        </div>
+
                         <div class="table-content" id="table-content">
                             <!-- Table content will be populated here -->
                         </div>
