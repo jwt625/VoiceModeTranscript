@@ -153,13 +153,13 @@ class WhisperStreamProcessor:
 
         # Configure VAD vs Fixed Interval mode
         if self.vad_config.get('use_fixed_interval', False):
-            # Fixed interval mode: 15s intervals, 20s duration
+            # Fixed interval mode: 10s intervals, 25s duration (15s overlap for better context)
             cmd.extend([
-                "--step", "15000",   # 15 second step interval
-                "--length", "20000", # 20 second window
+                "--step", "10000",   # 10 second step interval
+                "--length", "25000", # 25 second window
                 "-vth", "0.6"        # VAD threshold (still used for quality)
             ])
-            print(f"🔄 Using Fixed Interval mode: 15s intervals, 20s duration")
+            print(f"🔄 Using Fixed Interval mode: 10s intervals, 25s duration (15s overlap)")
         else:
             # VAD mode (default)
             cmd.extend([
@@ -243,12 +243,16 @@ class WhisperStreamProcessor:
         if self.vad_config.get('use_fixed_interval', False):
             # Filter out debug/initialization messages
             if self._is_debug_message(line):
+                print(f"🚫 Filtered debug message: {line}")
                 return
 
             # Process substantial text as direct transcript
             if self._is_transcript_line(line):
                 print(f"📝 Direct transcript: {line}")
                 self._add_direct_transcript(line)
+            else:
+                print(f"❌ Rejected transcript line: {line}")
+                print(f"   Length: {len(line.strip())}, Has letters: {bool(re.search(r'[a-zA-Z]', line))}")
 
     def _add_transcript_block(self, block_lines: List[str]):
         """Process a complete transcription block and extract transcript text"""
@@ -387,6 +391,10 @@ class WhisperStreamProcessor:
     def _is_transcript_line(self, line: str) -> bool:
         """Check if line contains actual transcript content"""
         line_stripped = line.strip()
+
+        # If text is long (>150 chars), it's almost certainly a transcript - always pass it
+        if len(line_stripped) > 150:
+            return True
 
         # Skip very short lines (likely not meaningful speech)
         if len(line_stripped) < 3:

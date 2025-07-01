@@ -1127,7 +1127,7 @@ class TranscriptRecorder {
 
     updateVADStatus(settings) {
         if (settings.use_fixed_interval) {
-            this.vadStatus.textContent = 'Fixed Intervals (15s)';
+            this.vadStatus.textContent = 'Fixed Intervals (10s)';
         } else {
             this.vadStatus.textContent = 'VAD Mode';
         }
