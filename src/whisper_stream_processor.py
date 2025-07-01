@@ -241,18 +241,20 @@ class WhisperStreamProcessor:
 
         # Handle fixed interval mode - process direct transcript lines
         if self.vad_config.get('use_fixed_interval', False):
-            # Filter out debug/initialization messages
-            if self._is_debug_message(line):
-                print(f"🚫 Filtered debug message: {line}")
+            # Check if it's a valid transcript FIRST (especially for long text)
+            if self._is_transcript_line(line):
+                print(f"� Direct transcript: {line}")
+                self._add_direct_transcript(line)
                 return
 
-            # Process substantial text as direct transcript
-            if self._is_transcript_line(line):
-                print(f"📝 Direct transcript: {line}")
-                self._add_direct_transcript(line)
-            else:
-                print(f"❌ Rejected transcript line: {line}")
-                print(f"   Length: {len(line.strip())}, Has letters: {bool(re.search(r'[a-zA-Z]', line))}")
+            # Only filter debug messages if it's NOT a valid transcript
+            if self._is_debug_message(line):
+                print(f"� Filtered debug message: {line}")
+                return
+
+            # If we get here, it's neither a transcript nor a debug message
+            print(f"❌ Unprocessed line: {line}")
+            print(f"   Length: {len(line.strip())}, Has letters: {bool(re.search(r'[a-zA-Z]', line))}")
 
     def _add_transcript_block(self, block_lines: List[str]):
         """Process a complete transcription block and extract transcript text"""
@@ -412,6 +414,14 @@ class WhisperStreamProcessor:
         if re.match(r'^main:\s', line_stripped):
             return False
 
+        # Skip whisper debug messages
+        if re.match(r'^whisper_', line_stripped):
+            return False
+
+        # Skip ggml debug messages
+        if re.match(r'^ggml_', line_stripped):
+            return False
+
         # Skip lines that are just bracketed status messages
         if re.match(r'^\[.*\]$', line_stripped):
             return False
@@ -424,7 +434,7 @@ class WhisperStreamProcessor:
         if len(line_stripped) < 10:
             return False
 
-        return True
+        return False
 
     def _add_direct_transcript(self, line: str):
         """Process a direct transcript line from fixed interval mode"""
