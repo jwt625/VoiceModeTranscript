@@ -455,7 +455,8 @@ def start_recording():
         mic_whisper_processor = WhisperStreamProcessor(
             callback=on_whisper_transcript,
             audio_source="microphone",
-            audio_device_id=mic_sdl_id  # Use SDL device ID for whisper.cpp
+            audio_device_id=mic_sdl_id,  # Use SDL device ID for whisper.cpp
+            vad_config=vad_settings  # Pass VAD configuration
         )
 
         # System audio processor (if system device is available and user didn't explicitly disable)
@@ -464,7 +465,8 @@ def start_recording():
             system_whisper_processor = WhisperStreamProcessor(
                 callback=on_whisper_transcript,
                 audio_source="system",
-                audio_device_id=system_sdl_id  # Use SDL device ID for whisper.cpp
+                audio_device_id=system_sdl_id,  # Use SDL device ID for whisper.cpp
+                vad_config=vad_settings  # Pass VAD configuration
             )
             print("🔊 System audio transcription enabled")
         elif user_explicitly_disabled_system_audio:
@@ -772,6 +774,45 @@ def update_auto_processing_settings():
                 'last_processing_time': auto_processing_state['last_processing_time'],
                 'is_timer_active': auto_processing_state['timer'] is not None
             }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Global VAD settings state
+vad_settings = {
+    'use_fixed_interval': False  # Default to VAD mode
+}
+
+
+@app.route('/api/vad-settings', methods=['GET'])
+def get_vad_settings():
+    """Get current VAD settings"""
+    try:
+        return jsonify({
+            'success': True,
+            'settings': vad_settings
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/vad-settings', methods=['POST'])
+def update_vad_settings():
+    """Update VAD settings"""
+    global vad_settings
+
+    try:
+        data = request.get_json()
+
+        if 'use_fixed_interval' in data:
+            vad_settings['use_fixed_interval'] = bool(data['use_fixed_interval'])
+
+        return jsonify({
+            'success': True,
+            'settings': vad_settings,
+            'message': 'VAD settings updated successfully'
         })
 
     except Exception as e:

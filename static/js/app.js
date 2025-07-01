@@ -40,6 +40,9 @@ class TranscriptRecorder {
 
         // Load auto-processing settings
         this.loadAutoProcessingSettings();
+
+        // Load VAD settings
+        this.loadVADSettings();
     }
     
     initializeElements() {
@@ -75,6 +78,10 @@ class TranscriptRecorder {
         this.autoProcessingEnabled = document.getElementById('auto-processing-enabled');
         this.autoProcessingInterval = document.getElementById('auto-processing-interval');
         this.autoProcessingStatus = document.getElementById('auto-processing-status');
+
+        // VAD control elements
+        this.vadFixedInterval = document.getElementById('vad-fixed-interval');
+        this.vadStatus = document.getElementById('vad-status');
 
         // Dual panel elements
         this.rawTranscriptContent = document.getElementById('raw-transcript-content');
@@ -128,6 +135,9 @@ class TranscriptRecorder {
         // Auto-processing controls
         this.autoProcessingEnabled.addEventListener('change', () => this.updateAutoProcessingSettings());
         this.autoProcessingInterval.addEventListener('change', () => this.updateAutoProcessingSettings());
+
+        // VAD controls
+        this.vadFixedInterval.addEventListener('change', () => this.updateVADSettings());
 
         // Panel toggles
         this.toggleRawBtn.addEventListener('click', () => this.toggleRawPanel());
@@ -800,8 +810,7 @@ class TranscriptRecorder {
         this.showSessionInfo();
         this.startDurationTimer();
 
-        // Show LLM status
-        this.llmStatus.style.display = 'block';
+        // Update LLM status
         this.llmStatusText.textContent = 'Ready for transcripts';
         this.whisperStatus.textContent = 'Running';
 
@@ -1070,6 +1079,58 @@ class TranscriptRecorder {
     handleWhisperError(data) {
         this.showErrorMessage('Whisper error: ' + data.message);
         this.whisperStatus.textContent = 'Error';
+    }
+
+    // VAD settings methods
+    async loadVADSettings() {
+        try {
+            const response = await fetch('/api/vad-settings');
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+                this.vadFixedInterval.checked = settings.use_fixed_interval;
+                this.updateVADStatus(settings);
+            }
+        } catch (error) {
+            console.error('Error loading VAD settings:', error);
+        }
+    }
+
+    async updateVADSettings() {
+        try {
+            const useFixedInterval = this.vadFixedInterval.checked;
+
+            const response = await fetch('/api/vad-settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    use_fixed_interval: useFixedInterval
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                this.updateVADStatus(result.settings);
+                console.log('VAD settings updated:', result.settings);
+            } else {
+                throw new Error(result.error || 'Failed to update VAD settings');
+            }
+        } catch (error) {
+            console.error('Error updating VAD settings:', error);
+            this.showErrorMessage('Failed to update VAD settings');
+        }
+    }
+
+    updateVADStatus(settings) {
+        if (settings.use_fixed_interval) {
+            this.vadStatus.textContent = 'Fixed Intervals (15s)';
+        } else {
+            this.vadStatus.textContent = 'VAD Mode';
+        }
     }
 
     addProcessedTranscript(result) {
@@ -1586,8 +1647,7 @@ class TranscriptRecorder {
         this.sessionIdSpan.textContent = sessionId;
         this.durationSpan.textContent = 'Historical';
 
-        // Show dual panels
-        this.llmStatus.style.display = 'block';
+        // Update LLM status for historical session
         this.llmStatusText.textContent = 'Historical session loaded';
 
         // Disable recording controls, enable viewing controls
@@ -1993,7 +2053,6 @@ class TranscriptRecorder {
                     // Enable LLM processing if transcripts exist
                     if (counts.total > 0) {
                         this.processLLMBtn.disabled = false;
-                        this.llmStatus.style.display = 'block';
                     }
                 }
 
@@ -2007,7 +2066,6 @@ class TranscriptRecorder {
                         this.processLLMBtn.disabled = true;
                         this.llmStatusText.textContent = 'Processing with LLM...';
                         this.llmSpinner.style.display = 'block';
-                        this.llmStatus.style.display = 'block';
                         console.log('🔄 Restored LLM processing state');
                     }
 
@@ -2080,14 +2138,9 @@ class TranscriptRecorder {
                 if (serverLLMProcessing) {
                     this.llmStatusText.textContent = 'Processing with LLM...';
                     this.llmSpinner.style.display = 'block';
-                    this.llmStatus.style.display = 'block';
                 } else {
                     this.llmStatusText.textContent = 'Ready';
                     this.llmSpinner.style.display = 'none';
-                    // Keep LLM status visible if we have transcripts
-                    if (this.rawTranscriptCount === 0) {
-                        this.llmStatus.style.display = 'none';
-                    }
                 }
 
                 stateChanged = true;

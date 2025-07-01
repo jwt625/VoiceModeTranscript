@@ -320,6 +320,15 @@ header h1 {
     color: #a1a1a6;
 }
 
+/* Processing Controls Container */
+.processing-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #3a3a3a;
+}
+
 /* Auto-processing Controls */
 .auto-processing-controls {
     display: flex;
@@ -327,8 +336,6 @@ header h1 {
     gap: 10px;
     font-size: 14px;
     color: #a1a1a6;
-    padding-top: 10px;
-    border-top: 1px solid #3a3a3a;
 }
 
 .auto-processing-toggle {
@@ -360,6 +367,38 @@ header h1 {
     font-size: 12px;
     color: #007aff;
     font-style: italic;
+}
+
+/* VAD Controls Inline */
+.vad-controls-inline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    font-size: 14px;
+    color: #a1a1a6;
+}
+
+.vad-controls-inline .vad-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #ffffff;
+}
+
+.vad-controls-inline .vad-toggle-label input[type="checkbox"] {
+    margin: 0;
+    transform: scale(1.1);
+}
+
+.vad-controls-inline .vad-status {
+    font-size: 12px;
+    color: #007aff;
+    font-style: italic;
+    padding: 4px 8px;
+    background: rgba(0, 122, 255, 0.1);
+    border-radius: 4px;
 }
 
 /* Dual Transcript Container */

@@ -30,7 +30,7 @@
             <button id="database-btn" class="btn btn-database">🗄️ Database Inspector</button>
         </div>
 
-        <div class="llm-status" id="llm-status" style="display: none;">
+        <div class="llm-status" id="llm-status">
             <div class="status-message">
                 <span id="llm-status-text">Ready</span>
                 <div class="loading-spinner" id="llm-spinner" style="display: none;"></div>
@@ -38,17 +38,26 @@
             <div class="accumulated-count">
                 Raw transcripts: <span id="accumulated-count">0</span>
             </div>
-            <div class="auto-processing-controls">
-                <label class="auto-processing-toggle">
-                    <input type="checkbox" id="auto-processing-enabled">
-                    Auto-process every
-                </label>
-                <select id="auto-processing-interval" disabled>
-                    <option value="2">2 min</option>
-                    <option value="5" selected>5 min</option>
-                    <option value="10">10 min</option>
-                </select>
-                <span class="auto-processing-status" id="auto-processing-status"></span>
+            <div class="processing-controls">
+                <div class="auto-processing-controls">
+                    <label class="auto-processing-toggle">
+                        <input type="checkbox" id="auto-processing-enabled">
+                        Auto-process every
+                    </label>
+                    <select id="auto-processing-interval" disabled>
+                        <option value="2">2 min</option>
+                        <option value="5" selected>5 min</option>
+                        <option value="10">10 min</option>
+                    </select>
+                    <span class="auto-processing-status" id="auto-processing-status"></span>
+                </div>
+                <div class="vad-controls-inline">
+                    <label class="vad-toggle-label">
+                        <input type="checkbox" id="vad-fixed-interval">
+                        🔄 Use Fixed Intervals (15s) instead of VAD
+                    </label>
+                    <span class="vad-status" id="vad-status">VAD Mode</span>
+                </div>
             </div>
         </div>
 

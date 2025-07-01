@@ -19,7 +19,7 @@ load_dotenv()
 
 
 class WhisperStreamProcessor:
-    def __init__(self, callback: Optional[Callable] = None, audio_source: str = "microphone", audio_device_id: Optional[int] = None):
+    def __init__(self, callback: Optional[Callable] = None, audio_source: str = "microphone", audio_device_id: Optional[int] = None, vad_config: Optional[Dict[str, Any]] = None):
         """
         Initialize whisper.cpp streaming processor for Flask integration
 
@@ -28,10 +28,12 @@ class WhisperStreamProcessor:
                      Signature: callback(transcript_data: Dict[str, Any])
             audio_source: Source of audio being processed ('microphone' or 'system')
             audio_device_id: Optional audio device ID to use for capture
+            vad_config: Optional VAD configuration dict with 'use_fixed_interval' key
         """
         self.callback = callback
         self.audio_source = audio_source
         self.audio_device_id = audio_device_id
+        self.vad_config = vad_config or {'use_fixed_interval': False}
         self.accumulated_transcripts = []
         self.transcript_counter = 0
         self.current_transcription_block = []
@@ -142,15 +144,33 @@ class WhisperStreamProcessor:
 
     def _run_whisper_process(self):
         """Run whisper.cpp streaming process (internal method)"""
-        # Whisper command similar to run_whisper_stream_vad.sh
+        # Build command based on VAD configuration
         cmd = [
             self.stream_binary,
             "-m", self.model_path,
-            "-t", "6",           # 6 threads
-            "--step", "0",       # Enable sliding window mode with VAD
-            "--length", "30000", # 30 second window
-            "-vth", "0.6"        # VAD threshold
+            "-t", "6"            # 6 threads
         ]
+
+        # Configure VAD vs Fixed Interval mode
+        if self.vad_config.get('use_fixed_interval', False):
+            # Fixed interval mode: 15s intervals, 20s duration
+            cmd.extend([
+                "--step", "15000",   # 15 second step interval
+                "--length", "20000", # 20 second window
+                "-vth", "0.6"        # VAD threshold (still used for quality)
+            ])
+            print(f"🔄 Using Fixed Interval mode: 15s intervals, 20s duration")
+        else:
+            # VAD mode (default)
+            cmd.extend([
+                "--step", "0",       # Enable sliding window mode with VAD
+                "--length", "30000", # 30 second window
+                "-vth", "0.6"        # VAD threshold
+            ])
+            print(f"🎯 Using VAD mode: voice activity detection")
+
+        # Add keep parameter for context
+        cmd.extend(["--keep", "200"])
 
         # Add audio device specification if provided
         if self.audio_device_id is not None:
@@ -193,13 +213,19 @@ class WhisperStreamProcessor:
         """Process a single line from whisper.cpp output"""
         line = line.strip()
 
-        # Check for transcription block start
+        # Skip empty lines
+        if not line:
+            return
+
+        print(f"🔍 Whisper output: {line}")
+
+        # Check for transcription block start (VAD mode)
         if "### Transcription" in line and "START" in line:
             self.in_transcription_block = True
             self.current_transcription_block = []
             return
 
-        # Check for transcription block end
+        # Check for transcription block end (VAD mode)
         if "### Transcription" in line and "END" in line:
             if self.in_transcription_block and self.current_transcription_block:
                 # Process the complete transcription block
@@ -208,9 +234,21 @@ class WhisperStreamProcessor:
             self.current_transcription_block = []
             return
 
-        # If we're in a transcription block, collect the lines
+        # If we're in a transcription block (VAD mode), collect the lines
         if self.in_transcription_block:
             self.current_transcription_block.append(line)
+            return
+
+        # Handle fixed interval mode - process direct transcript lines
+        if self.vad_config.get('use_fixed_interval', False):
+            # Filter out debug/initialization messages
+            if self._is_debug_message(line):
+                return
+
+            # Process substantial text as direct transcript
+            if self._is_transcript_line(line):
+                print(f"📝 Direct transcript: {line}")
+                self._add_direct_transcript(line)
 
     def _add_transcript_block(self, block_lines: List[str]):
         """Process a complete transcription block and extract transcript text"""
@@ -277,6 +315,144 @@ class WhisperStreamProcessor:
         text = ' '.join(text.split())
         
         return text.strip()
+
+    def _is_debug_message(self, line: str) -> bool:
+        """Check if line is a debug/initialization message that should be filtered out"""
+        debug_patterns = [
+            'ggml_',
+            'whisper_',
+            'init:',
+            'loading',
+            'loaded',
+            'system info',
+            'AVAudioSession',
+            'audio_state',
+            'capture_init',
+            'SDL',
+            'METAL',
+            'processing',
+            'n_threads',
+            'n_processors',
+            'main:',  # whisper.cpp main function debug messages
+            '[Start speaking]',  # whisper.cpp status messages
+            '[End speaking]',
+            'n_new_line',
+            'no_context',
+            'vad_',
+            'audio_ctx',
+            'beam_size',
+            'temperature',
+            'best_of',
+            'language',
+            'model',
+            'threads',
+            'offset',
+            'duration',
+            'max_context',
+            'max_len',
+            'split_on_word',
+            'speed_up',
+            'translate',
+            'diarize',
+            'tinydiarize',
+            'no_fallback',
+            'output_txt',
+            'output_vtt',
+            'output_srt',
+            'output_wts',
+            'output_csv',
+            'output_jsn',
+            'print_special',
+            'print_colors',
+            'print_progress',
+            'no_timestamps',
+            '[2K',  # Terminal control sequences
+            '[1K',
+            '[0K'
+        ]
+
+        line_lower = line.lower()
+        line_stripped = line.strip()
+
+        # Check for debug patterns
+        if any(pattern.lower() in line_lower for pattern in debug_patterns):
+            return True
+
+        # Check for lines that are just control sequences or short codes
+        if re.match(r'^\[[0-9A-Za-z]+$', line_stripped):
+            return True
+
+        return False
+
+    def _is_transcript_line(self, line: str) -> bool:
+        """Check if line contains actual transcript content"""
+        line_stripped = line.strip()
+
+        # Skip very short lines (likely not meaningful speech)
+        if len(line_stripped) < 3:
+            return False
+
+        # Skip lines that are just timestamps
+        if re.match(r'^\[[\d:.\s\-\>]+\]$', line_stripped):
+            return False
+
+        # Skip lines with only punctuation or numbers
+        if re.match(r'^[\s\d\.\,\!\?\-\[\]]+$', line_stripped):
+            return False
+
+        # Skip lines that start with specific whisper.cpp patterns
+        if re.match(r'^main:\s', line_stripped):
+            return False
+
+        # Skip lines that are just bracketed status messages
+        if re.match(r'^\[.*\]$', line_stripped):
+            return False
+
+        # Must contain some alphabetic characters
+        if not re.search(r'[a-zA-Z]', line):
+            return False
+
+        # Must have a reasonable length for speech (at least 10 characters)
+        if len(line_stripped) < 10:
+            return False
+
+        return True
+
+    def _add_direct_transcript(self, line: str):
+        """Process a direct transcript line from fixed interval mode"""
+        # Clean the transcript text
+        transcript_text = self._clean_transcript(line)
+        if not transcript_text:
+            return
+
+        self.transcript_counter += 1
+        self.total_transcripts += 1
+
+        # Create transcript data structure
+        transcript_data = {
+            "id": str(uuid.uuid4()),
+            "session_id": self.session_id,
+            "text": transcript_text,
+            "timestamp": datetime.now().isoformat(),
+            "sequence_number": self.transcript_counter,
+            "type": "raw_transcript",
+            "audio_source": self.audio_source
+        }
+
+        # Add to accumulated transcripts
+        self.accumulated_transcripts.append(transcript_data)
+
+        print(f"📝 Raw transcript {self.transcript_counter} ({self.audio_source}): {transcript_text}")
+        print(f"📚 Total accumulated: {len(self.accumulated_transcripts)}")
+
+        # Notify callback if provided
+        if self.callback:
+            print(f"🔄 Sending transcript to callback")
+            self.callback({
+                "type": "raw_transcript",
+                "data": transcript_data,
+                "accumulated_count": len(self.accumulated_transcripts)
+            })
 
     def get_stats(self) -> Dict[str, Any]:
         """Get processing statistics"""
