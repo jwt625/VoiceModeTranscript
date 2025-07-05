@@ -1,6 +1,6 @@
 # ChatGPT Voice Mode Transcript Recorder
 
-A real-time transcript recorder for ChatGPT voice conversations with dual audio capture, whisper.cpp streaming, and intelligent LLM deduplication.
+A real-time transcript recorder for ChatGPT voice conversations with dual audio capture, whisper.cpp streaming, and intelligent LLM deduplication. Built with a clean, modular architecture using service-oriented design.
 
 ## Features
 
@@ -12,6 +12,7 @@ A real-time transcript recorder for ChatGPT voice conversations with dual audio 
 - **Session export** - download transcripts in JSON, TXT, or CSV formats
 - **Session browser** - view and manage historical recording sessions
 - **Dark mode interface** with real-time status indicators
+- **Modular architecture** - clean separation of concerns with service layer
 
 ## Prerequisites
 
@@ -67,8 +68,8 @@ brew install blackhole-2ch
 echo 'LLM_API_KEY="your_lambda_labs_api_key_here"' > .env
 echo 'LLM_BASE_URL="https://api.lambda.ai/v1"' >> .env
 echo 'LLM_MODEL="llama-4-maverick-17b-128e-instruct-fp8"' >> .env
-echo 'WHISPER_STREAM_BINARY="./whisper.cpp/build/bin/whisper-stream"' >> .env
 echo 'WHISPER_MODEL_PATH="./whisper.cpp/models/ggml-base.en.bin"' >> .env
+echo 'WHISPER_EXECUTABLE="./whisper.cpp/main"' >> .env
 ```
 
 ## Running the App
@@ -130,6 +131,33 @@ GET /api/sessions/<session_id>/export?format=<json|txt|csv>&content=<raw|process
 curl "http://localhost:5001/api/sessions/session_20250704_233045/export?format=json&content=both" -o export.json
 ```
 
+## Project Structure
+
+```
+src/
+├── config/          # Configuration management
+│   ├── __init__.py
+│   └── settings.py  # AppConfig with environment variables
+├── models/          # Database models and repositories
+│   ├── __init__.py
+│   ├── database.py  # Database connection and initialization
+│   ├── repositories.py  # Repository pattern for data access
+│   ├── session.py   # Session model
+│   └── transcript.py    # Transcript models
+├── services/        # Business logic layer
+│   ├── __init__.py
+│   ├── app_service.py      # Main coordinator service
+│   ├── audio_service.py    # Audio capture and monitoring
+│   ├── device_service.py   # Audio device management
+│   ├── llm_service.py      # LLM processing coordination
+│   ├── session_service.py  # Session management
+│   └── transcript_service.py  # Transcript processing
+├── audio_capture.py        # Audio capture utilities
+├── llm_processor.py        # LLM processing engine
+├── sdl_device_mapper.py    # SDL/PyAudio device mapping
+└── whisper_stream_processor.py  # Whisper.cpp integration
+```
+
 ## Database Structure
 
 The app uses SQLite with three main tables:
@@ -164,6 +192,32 @@ The app uses SQLite with three main tables:
 - `POST /api/stop` - Stop recording session
 - `POST /api/process-llm` - Trigger LLM processing
 - `GET /api/status` - Get current recording status
+
+## Development
+
+### Code Quality
+The project uses modern Python tooling for code quality:
+- **ruff** - Fast linting and formatting
+- **mypy** - Type checking (enabled in production)
+- **pre-commit** - Automated quality checks
+
+```bash
+# Install development dependencies
+uv sync --dev
+
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Run linting and formatting
+uv run ruff check src/ app.py
+uv run ruff format src/ app.py
+```
+
+### Architecture
+- **Configuration**: Centralized in `src/config/settings.py` with environment variable support
+- **Database**: Repository pattern in `src/models/` for clean data access
+- **Business Logic**: Service layer in `src/services/` with focused responsibilities
+- **Controllers**: Flask routes (to be refactored from `app.py`)
 
 ## Troubleshooting
 
