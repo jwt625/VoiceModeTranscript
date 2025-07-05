@@ -9,7 +9,7 @@ import re
 import subprocess
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from dotenv import load_dotenv
@@ -40,16 +40,16 @@ class WhisperStreamProcessor:
         self.audio_source = audio_source
         self.audio_device_id = audio_device_id
         self.vad_config = vad_config or {"use_fixed_interval": False}
-        self.accumulated_transcripts = []
+        self.accumulated_transcripts: list[dict[str, Any]] = []
         self.transcript_counter = 0
-        self.current_transcription_block = []
+        self.current_transcription_block: list[str] = []
         self.in_transcription_block = False
         self.is_running = False
-        self.session_id = None
+        self.session_id: Optional[str] = None
 
         # Whisper.cpp process management
-        self.whisper_process = None
-        self.processing_thread = None
+        self.whisper_process: Optional[subprocess.Popen] = None
+        self.processing_thread: Optional[threading.Thread] = None
 
         # Configuration from environment
         self.stream_binary = os.getenv(
@@ -60,7 +60,7 @@ class WhisperStreamProcessor:
         )
 
         # Statistics
-        self.start_time = None
+        self.start_time: Optional[datetime] = None
         self.total_transcripts = 0
         self.processing_errors = 0
 
@@ -132,9 +132,10 @@ class WhisperStreamProcessor:
         if self.processing_thread and self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2)
 
-        duration = (
-            (datetime.now() - self.start_time).total_seconds() if self.start_time else 0
-        )
+        duration = 0.0
+        if self.start_time:
+            time_diff: timedelta = datetime.now() - self.start_time
+            duration = time_diff.total_seconds()
 
         result = {
             "session_id": self.session_id,
@@ -514,9 +515,10 @@ class WhisperStreamProcessor:
 
     def get_stats(self) -> dict[str, Any]:
         """Get processing statistics"""
-        duration = (
-            (datetime.now() - self.start_time).total_seconds() if self.start_time else 0
-        )
+        duration = 0.0
+        if self.start_time:
+            time_diff: timedelta = datetime.now() - self.start_time
+            duration = time_diff.total_seconds()
 
         return {
             "session_id": self.session_id,

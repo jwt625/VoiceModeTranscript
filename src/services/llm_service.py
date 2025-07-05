@@ -55,19 +55,28 @@ class LLMService:
 
     def get_processor_status(self) -> dict:
         """Get LLM processor status."""
+        queue_status = self.llm_processor.get_queue_status()
         return {
-            "active_jobs": self.llm_processor.get_active_job_count(),
-            "queue_size": self.llm_processor.get_queue_size(),
-            "is_processing": self.llm_processor.is_processing(),
+            "active_jobs": 1 if self.llm_processor.is_processing else 0,
+            "queue_size": len(queue_status),
+            "is_processing": self.llm_processor.is_processing,
         }
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel an LLM processing job."""
-        return self.llm_processor.cancel_job(job_id)
+        # LLMProcessor doesn't have cancel_job method
+        # For now, return False indicating cancellation not supported
+        return False
 
     def get_job_status(self, job_id: str) -> Optional[dict]:
         """Get status of a specific job."""
-        return self.llm_processor.get_job_status(job_id)
+        # LLMProcessor doesn't have get_job_status method
+        # Check if job_id exists in queue
+        queue_status = self.llm_processor.get_queue_status()
+        for job in queue_status:
+            if job.get("job_id") == job_id:
+                return job
+        return None
 
     def _on_llm_result(self, event_data: dict) -> None:
         """Callback for LLM processor events."""

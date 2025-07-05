@@ -38,11 +38,11 @@ class LLMProcessor:
 
         # Processing state
         self.is_processing = False
-        self.processing_queue = []
+        self.processing_queue: list[dict[str, Any]] = []
 
         # Statistics
         self.total_processed = 0
-        self.total_processing_time = 0
+        self.total_processing_time = 0.0
         self.failed_requests = 0
 
         print(f"🤖 LLM Processor initialized with model: {self.model}")
@@ -285,11 +285,11 @@ Do not include explanations, metadata, or timestamps in your output - only the s
 
     def get_stats(self) -> dict[str, Any]:
         """Get LLM processing statistics"""
-        avg_processing_time = 0
+        avg_processing_time = 0.0
         if self.total_processed > 0:
             avg_processing_time = self.total_processing_time / self.total_processed
 
-        success_rate = 0
+        success_rate = 0.0
         total_requests = self.total_processed + self.failed_requests
         if total_requests > 0:
             success_rate = self.total_processed / total_requests

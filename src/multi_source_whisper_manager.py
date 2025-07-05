@@ -21,7 +21,7 @@ class MultiSourceWhisperManager:
         self.callback = callback
         self.processors: dict[str, WhisperStreamProcessor] = {}
         self.is_running = False
-        self.session_id = None
+        self.session_id: Optional[str] = None
 
     def add_audio_source(self, source_name: str, audio_device_id: Optional[int] = None):
         """
@@ -149,18 +149,20 @@ class MultiSourceWhisperManager:
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics from all audio sources"""
-        stats = {
-            "total_sources": len(self.processors),
-            "active_sources": sum(1 for p in self.processors.values() if p.is_running),
-            "sources": {},
-        }
+        sources_stats: dict[str, Any] = {}
 
         for source_name, processor in self.processors.items():
-            stats["sources"][source_name] = {
+            sources_stats[source_name] = {
                 "is_running": processor.is_running,
                 "transcript_count": len(processor.accumulated_transcripts),
                 "audio_source": processor.audio_source,
                 "audio_device_id": processor.audio_device_id,
             }
+
+        stats = {
+            "total_sources": len(self.processors),
+            "active_sources": sum(1 for p in self.processors.values() if p.is_running),
+            "sources": sources_stats,
+        }
 
         return stats

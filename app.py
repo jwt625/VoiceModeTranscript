@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime
+from typing import Any
 
 from flask import Flask, Response, jsonify, render_template, request
 
@@ -24,7 +25,9 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = "your-secret-key-here"
 
 # SSE streaming queue
-stream_queue = queue.Queue(maxsize=1000)  # Prevent memory issues
+stream_queue: queue.Queue[dict[str, Any]] = queue.Queue(
+    maxsize=1000
+)  # Prevent memory issues
 
 # Global state
 recording_state = {"is_recording": False, "session_id": None, "start_time": None}

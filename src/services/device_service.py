@@ -14,7 +14,7 @@ class DeviceService:
         """Initialize device service."""
         self.config = get_config()
         self.device_mapper = SDLDeviceMapper()
-        self.audio_capture = AudioCapture()
+        self.audio_capture: Optional[AudioCapture] = AudioCapture()
 
     def get_available_devices(self) -> dict:
         """Get all available audio devices."""
@@ -162,6 +162,6 @@ class DeviceService:
             print(f"⚠️ Error configuring audio capture: {e}")
             return False
 
-    def get_audio_capture(self) -> AudioCapture:
+    def get_audio_capture(self) -> Optional[AudioCapture]:
         """Get the audio capture instance."""
         return self.audio_capture

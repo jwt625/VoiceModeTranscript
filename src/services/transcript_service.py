@@ -2,7 +2,7 @@
 
 import queue
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from ..config import get_config
 from ..models import (
@@ -86,20 +86,20 @@ class TranscriptService:
             "system_started": system_success,
         }
 
-    def stop_streaming(self) -> dict:
+    def stop_streaming(self) -> dict[str, Any]:
         """Stop whisper.cpp streaming for all processors."""
-        mic_stopped = False
-        system_stopped = False
+        mic_result = {}
+        system_result = {}
 
         if self.mic_whisper_processor:
-            mic_stopped = self.mic_whisper_processor.stop_streaming()
+            mic_result = self.mic_whisper_processor.stop_streaming()
 
         if self.system_whisper_processor:
-            system_stopped = self.system_whisper_processor.stop_streaming()
+            system_result = self.system_whisper_processor.stop_streaming()
 
         return {
-            "microphone_stopped": mic_stopped,
-            "system_stopped": system_stopped,
+            "microphone_stopped": mic_result,
+            "system_stopped": system_result,
         }
 
     def get_accumulated_transcripts(self) -> list[dict]:
@@ -139,7 +139,7 @@ class TranscriptService:
         system_count = 0
 
         if self.mic_whisper_processor:
-            mic_active = self.mic_whisper_processor.is_streaming()
+            mic_active = self.mic_whisper_processor.is_running
             try:
                 mic_transcripts = (
                     self.mic_whisper_processor.get_accumulated_transcripts()
@@ -149,7 +149,7 @@ class TranscriptService:
                 mic_count = 0
 
         if self.system_whisper_processor:
-            system_active = self.system_whisper_processor.is_streaming()
+            system_active = self.system_whisper_processor.is_running
             try:
                 system_transcripts = (
                     self.system_whisper_processor.get_accumulated_transcripts()

@@ -12,7 +12,7 @@ from collections import deque
 try:
     from .whisper_cpp_client import WhisperCppClient
 except ImportError:
-    from whisper_cpp_client import WhisperCppClient
+    from src.whisper_cpp_client import WhisperCppClient
 
 
 class TranscriptProcessor:

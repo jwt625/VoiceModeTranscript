@@ -7,7 +7,7 @@ Maps between PyAudio devices (for audio level monitoring) and SDL devices (for w
 import os
 import re
 import subprocess
-from typing import Optional
+from typing import Any, Optional
 
 import pyaudio
 
@@ -97,12 +97,12 @@ class SDLDeviceMapper:
             print(f"❌ Error getting PyAudio devices: {e}")
             return []
 
-    def create_device_mapping(self) -> dict[str, dict]:
+    def create_device_mapping(self) -> dict[str, Any]:
         """Create mapping between SDL and PyAudio devices"""
         sdl_devices = self.get_sdl_devices()
         pyaudio_devices = self.get_pyaudio_devices()
 
-        mapping = {
+        mapping: dict[str, Any] = {
             "sdl_devices": sdl_devices,
             "pyaudio_devices": pyaudio_devices,
             "sdl_to_pyaudio": {},
@@ -148,7 +148,8 @@ class SDLDeviceMapper:
             return None
 
         mapping = self.create_device_mapping()
-        return mapping["pyaudio_to_sdl"].get(pyaudio_device_id)
+        result = mapping["pyaudio_to_sdl"].get(pyaudio_device_id)
+        return result if isinstance(result, int) else None
 
     def get_pyaudio_device_id(self, sdl_device_id: Optional[int]) -> Optional[int]:
         """Convert SDL device ID to PyAudio device ID"""
@@ -156,7 +157,8 @@ class SDLDeviceMapper:
             return None
 
         mapping = self.create_device_mapping()
-        return mapping["sdl_to_pyaudio"].get(sdl_device_id)
+        result = mapping["sdl_to_pyaudio"].get(sdl_device_id)
+        return result if isinstance(result, int) else None
 
     def get_device_info(self) -> dict:
         """Get comprehensive device information for frontend"""

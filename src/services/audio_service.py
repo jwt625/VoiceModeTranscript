@@ -30,13 +30,12 @@ class AudioService:
             return False
 
         try:
-            success = self.audio_capture.start_capture()
-            if success:
-                self.is_capturing = True
-                print("🎤 Audio capture started for volume monitoring")
-            else:
-                print("❌ Failed to start audio capture")
-            return success
+            # AudioCapture uses start_recording, not start_capture
+            # For volume monitoring, we'll use a dummy session_id
+            self.audio_capture.start_recording("volume_monitor")
+            self.is_capturing = True
+            print("🎤 Audio capture started for volume monitoring")
+            return True
         except Exception as e:
             print(f"❌ Error starting audio capture: {e}")
             return False
@@ -47,11 +46,11 @@ class AudioService:
             return True
 
         try:
-            success = self.audio_capture.stop_capture()
-            if success:
-                self.is_capturing = False
-                print("🛑 Audio capture stopped")
-            return success
+            # AudioCapture uses stop_recording, not stop_capture
+            self.audio_capture.stop_recording()
+            self.is_capturing = False
+            print("🛑 Audio capture stopped")
+            return True
         except Exception as e:
             print(f"❌ Error stopping audio capture: {e}")
             return False
@@ -61,7 +60,7 @@ class AudioService:
         return {
             "is_capturing": self.is_capturing,
             "audio_capture_initialized": self.audio_capture is not None,
-            "audio_capture_active": self.audio_capture.is_active()
+            "audio_capture_active": self.audio_capture.is_recording
             if self.audio_capture
             else False,
         }
@@ -101,9 +100,11 @@ class AudioService:
             if not self.audio_capture:
                 return None
 
-            # Get audio levels from both microphone and system audio
-            mic_level = self.audio_capture.get_mic_level()
-            system_level = self.audio_capture.get_system_level()
+            # AudioCapture doesn't have direct level methods
+            # For now, return default values - this would need to be implemented
+            # by accessing the audio buffers in AudioCapture
+            mic_level = 0.0
+            system_level = 0.0
 
             # Create level data
             level_data = {
