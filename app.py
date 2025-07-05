@@ -37,8 +37,8 @@ recording_state = {
 
 # Auto-processing state
 auto_processing_state = {
-    'enabled': False,
-    'interval_minutes': 5,
+    'enabled': True,
+    'interval_minutes': 2,
     'timer': None,
     'last_processing_time': None
 }
