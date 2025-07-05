@@ -125,6 +125,7 @@ class TranscriptRecorder {
         // Session browser elements
         this.sessionBrowserControls = document.getElementById('session-browser-controls');
         this.loadSessionBtn = document.getElementById('load-session-btn');
+        this.generateSummaryBtn = document.getElementById('generate-summary-btn');
         this.selectedSessionInfo = document.getElementById('selected-session-info');
 
         // Bookmark filtering elements
@@ -221,6 +222,9 @@ class TranscriptRecorder {
         // Session browser controls
         if (this.loadSessionBtn) {
             this.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
+        }
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.addEventListener('click', () => this.generateSummaryForSession());
         }
 
         // Bookmark filtering controls
@@ -1785,6 +1789,9 @@ class TranscriptRecorder {
         this.selectedSessionId = null;
         this.loadSessionBtn.disabled = true;
         this.exportSessionBtn.disabled = true;
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.disabled = true;
+        }
         this.selectedSessionInfo.textContent = 'No session selected';
 
         // Hide export options if they were shown
@@ -1835,6 +1842,8 @@ class TranscriptRecorder {
                     <tr>
                         <th>Bookmark</th>
                         <th>Session ID</th>
+                        <th>Summary</th>
+                        <th>Keywords</th>
                         <th>Raw Transcripts</th>
                         <th>Processed Transcripts</th>
                         <th>Start Time</th>
@@ -1852,6 +1861,18 @@ class TranscriptRecorder {
                                 </span>
                             </td>
                             <td class="text-truncate">${session.display_name}</td>
+                            <td class="summary-cell" title="${session.summary || 'No summary available'}">
+                                ${session.summary ?
+                                    `<span class="summary-text">${session.summary.length > 80 ? session.summary.substring(0, 80) + '...' : session.summary}</span>` :
+                                    '<span class="no-summary">No summary</span>'
+                                }
+                            </td>
+                            <td class="keywords-cell">
+                                ${session.keywords && session.keywords.length > 0 ?
+                                    session.keywords.map(keyword => `<span class="keyword-tag">${keyword}</span>`).join(' ') :
+                                    '<span class="no-keywords">No keywords</span>'
+                                }
+                            </td>
                             <td>${session.raw_transcript_count}</td>
                             <td>${session.processed_transcript_count}</td>
                             <td>${new Date(session.start_time).toLocaleString()}</td>
@@ -1902,9 +1923,55 @@ class TranscriptRecorder {
         // Update UI
         this.loadSessionBtn.disabled = false;
         this.exportSessionBtn.disabled = false;
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.disabled = false;
+        }
         this.selectedSessionInfo.textContent = `Selected: ${row.cells[1].textContent}`; // Session ID is now in column 1
 
         console.log(`📖 Selected session: ${this.selectedSessionId}`);
+    }
+
+    async generateSummaryForSession() {
+        if (!this.selectedSessionId) {
+            this.showErrorMessage('No session selected');
+            return;
+        }
+
+        try {
+            // Show loading state
+            const originalText = this.generateSummaryBtn.textContent;
+            this.generateSummaryBtn.textContent = '⏳ Generating...';
+            this.generateSummaryBtn.disabled = true;
+
+            const response = await fetch(`/api/sessions/${this.selectedSessionId}/generate-summary`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                this.showNotification('success', `Summary generated: ${result.summary.substring(0, 100)}...`);
+
+                // Reload the sessions table to show the new summary
+                await this.loadSessionsTable();
+
+                // Re-select the session if it's still visible
+                const sessionRow = this.tableContent.querySelector(`tr[data-session-id="${this.selectedSessionId}"]`);
+                if (sessionRow) {
+                    this.selectSession(sessionRow);
+                }
+            } else {
+                throw new Error(result.error || 'Failed to generate summary');
+            }
+
+        } catch (error) {
+            console.error('Error generating summary:', error);
+            this.showErrorMessage(`Failed to generate summary: ${error.message}`);
+        } finally {
+            // Restore button state
+            this.generateSummaryBtn.textContent = '📝 Generate Summary';
+            this.generateSummaryBtn.disabled = false;
+        }
     }
 
     async toggleBookmark(sessionId, starElement) {

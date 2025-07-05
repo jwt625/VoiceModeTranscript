@@ -1259,6 +1259,42 @@ header h1 {
     color: #ffffff;
 }
 
+/* Summary and Keywords Styling */
+.summary-cell {
+    max-width: 300px;
+}
+
+.summary-text {
+    display: block;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.no-summary {
+    color: #8e8e93;
+    font-style: italic;
+}
+
+.keywords-cell {
+    max-width: 200px;
+}
+
+.keyword-tag {
+    display: inline-block;
+    background: #007aff;
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin: 1px 2px;
+    white-space: nowrap;
+}
+
+.no-keywords {
+    color: #8e8e93;
+    font-style: italic;
+}
+
 /* Session Browser Controls */
 .session-browser-controls {
     background: #1a1a1a;

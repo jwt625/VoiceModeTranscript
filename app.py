@@ -970,7 +970,7 @@ def get_sessions():
         # Get session records from sessions table (preferred source)
         cursor.execute(
             """
-            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked
+            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked, summary, keywords, summary_generated_at
             FROM sessions
             ORDER BY start_time DESC
         """
@@ -1006,6 +1006,19 @@ def get_sessions():
                 total_words = session_data[5] or 0
                 avg_confidence = session_data[6] or 0.0
                 bookmarked = bool(session_data[7]) if len(session_data) > 7 else False
+                summary = session_data[8] if len(session_data) > 8 else None
+                keywords_json = session_data[9] if len(session_data) > 9 else None
+                summary_generated_at = (
+                    session_data[10] if len(session_data) > 10 else None
+                )
+
+                # Parse keywords JSON
+                keywords = []
+                if keywords_json:
+                    try:
+                        keywords = json.loads(keywords_json)
+                    except (json.JSONDecodeError, TypeError):
+                        keywords = []
             else:
                 start_time = transcript_data[2] if transcript_data else None
                 end_time = transcript_data[3] if transcript_data else None
@@ -1014,6 +1027,9 @@ def get_sessions():
                 total_words = 0
                 avg_confidence = 0.0
                 bookmarked = False
+                summary = None
+                keywords = []
+                summary_generated_at = None
 
             sessions.append(
                 {
@@ -1030,6 +1046,9 @@ def get_sessions():
                     "total_words": total_words,
                     "avg_confidence": avg_confidence,
                     "bookmarked": bookmarked,
+                    "summary": summary,
+                    "keywords": keywords,
+                    "summary_generated_at": summary_generated_at,
                     "display_name": f"Session {session_id.replace('session_', '')}",
                 }
             )
@@ -1451,6 +1470,37 @@ def toggle_session_bookmark(session_id):
                 "message": message,
             }
         )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sessions/<session_id>/generate-summary", methods=["POST"])
+def generate_session_summary_endpoint(session_id):
+    """Manually generate summary for a session"""
+    try:
+        # Use the session service to generate summary
+        import queue
+
+        from src.services.session_service import SessionService
+
+        # Create a temporary session service for this operation
+        temp_queue = queue.Queue()
+        session_service = SessionService(temp_queue)
+
+        result = session_service.generate_summary_for_session(session_id)
+
+        if result["success"]:
+            return jsonify(
+                {
+                    "success": True,
+                    "summary": result["summary"],
+                    "keywords": result["keywords"],
+                    "message": result["message"],
+                }
+            )
+        else:
+            return jsonify({"success": False, "error": result["error"]}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
