@@ -51,8 +51,8 @@ This document tracks the progress of the major code refactoring effort to improv
 - `src/__init__.py` - Created package structure
 - All Python files - Formatted and linted
 
-### 🔄 Task 2: Restructure project architecture
-**Status**: IN_PROGRESS
+### ✅ Task 2: Restructure project architecture
+**Status**: COMPLETE
 
 **Changes Made So Far**:
 - **Created new directory structure**:
@@ -86,14 +86,29 @@ This document tracks the progress of the major code refactoring effort to improv
 
 ## Planned Tasks
 
-### 📋 Task 3: Extract database operations
-**Status**: NOT_STARTED
+### ✅ Task 3: Extract database operations
+**Status**: COMPLETE
 
-**Plan**:
-- Create repository classes for database operations
-- Move all SQL queries out of `app.py`
-- Create models for database entities (sessions, transcripts, etc.)
-- Implement proper database connection management
+**Changes Made**:
+- **Created Database Models**:
+  - `Session` - Recording session model with metrics
+  - `RawTranscript` - Whisper.cpp transcript model
+  - `ProcessedTranscript` - LLM-processed transcript model
+  - `LegacyTranscript` - Backward compatibility model
+- **Created Repository Classes**:
+  - `SessionRepository` - Session CRUD operations and metrics
+  - `RawTranscriptRepository` - Raw transcript operations with pagination
+  - `ProcessedTranscriptRepository` - Processed transcript operations
+  - `DatabaseRepository` - Database statistics and global operations
+- **Database Infrastructure**:
+  - `get_db_connection()` - Context manager for database connections
+  - `init_database()` - Centralized database initialization
+  - Proper error handling and logging throughout
+  - Maintained backward compatibility with existing schema
+- **Architecture Improvements**:
+  - Repository pattern for clean separation of concerns
+  - Type-safe model classes with serialization methods
+  - Centralized database operations (ready to replace app.py functions)
 
 ### 📋 Task 4: Create service layer
 **Status**: NOT_STARTED
@@ -151,13 +166,14 @@ This document tracks the progress of the major code refactoring effort to improv
 
 - **Development tools**: ✅ Fully set up and working
 - **Code quality**: ✅ All linting issues resolved
-- **Architecture**: 🔄 Basic structure created, configuration module complete
+- **Architecture**: ✅ Complete new structure with config and database layers
+- **Database layer**: ✅ Models and repositories implemented
 - **Original functionality**: ✅ Preserved (no breaking changes yet)
 
 ## Next Steps
 
-1. Continue with database layer extraction
-2. Create service layer for business logic
+1. ✅ ~~Continue with database layer extraction~~ **COMPLETE**
+2. 🔄 **IN PROGRESS**: Create service layer for business logic
 3. Refactor Flask routes into controllers
 4. Replace global variables with configuration system
 5. Add comprehensive type annotations
