@@ -4,6 +4,7 @@ class TranscriptRecorder {
     constructor() {
         this.eventSource = null;
         this.isRecording = false;
+        this.isPaused = false;
         this.sessionId = null;
         this.startTime = null;
 
@@ -48,6 +49,8 @@ class TranscriptRecorder {
     initializeElements() {
         // Control buttons
         this.startBtn = document.getElementById('start-btn');
+        this.pauseBtn = document.getElementById('pause-btn');
+        this.resumeBtn = document.getElementById('resume-btn');
         this.stopBtn = document.getElementById('stop-btn');
         this.processLLMBtn = document.getElementById('process-llm-btn');
         this.clearBtn = document.getElementById('clear-btn');
@@ -144,6 +147,8 @@ class TranscriptRecorder {
     setupEventListeners() {
         // Recording controls
         this.startBtn.addEventListener('click', () => this.startRecording());
+        this.pauseBtn.addEventListener('click', () => this.pauseRecording());
+        this.resumeBtn.addEventListener('click', () => this.resumeRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
         this.clearBtn.addEventListener('click', () => this.clearTranscript());
 
@@ -250,6 +255,18 @@ class TranscriptRecorder {
                     this.processWithLLM();
                 }
 
+                // Spacebar to pause/resume recording
+                if (event.key === ' ' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+                    event.preventDefault();
+                    if (this.isRecording) {
+                        if (this.isPaused) {
+                            this.resumeRecording();
+                        } else {
+                            this.pauseRecording();
+                        }
+                    }
+                }
+
                 // Ctrl+B to bookmark current session
                 if (event.key === 'b' && event.ctrlKey && !event.altKey && !event.shiftKey) {
                     event.preventDefault();
@@ -292,6 +309,14 @@ class TranscriptRecorder {
                     case 'recording_stopped':
                         console.log('🛑 Recording stopped:', data);
                         this.handleRecordingStopped(data);
+                        break;
+                    case 'recording_paused':
+                        console.log('⏸️ Recording paused:', data);
+                        this.handleRecordingPaused(data);
+                        break;
+                    case 'recording_resumed':
+                        console.log('▶️ Recording resumed:', data);
+                        this.handleRecordingResumed(data);
                         break;
                     case 'raw_transcript':
                         console.log('📝 Raw transcript received:', data);
@@ -409,6 +434,9 @@ class TranscriptRecorder {
 
                 this.updateStatus('recording', 'Recording');
                 this.startBtn.disabled = true;
+                this.pauseBtn.disabled = false;
+                this.pauseBtn.style.display = 'inline-block';
+                this.resumeBtn.style.display = 'none';
                 this.stopBtn.disabled = false;
 
                 this.showSessionInfo();
@@ -451,11 +479,16 @@ class TranscriptRecorder {
 
             if (response.ok) {
                 this.isRecording = false;
+                this.isPaused = false;
                 this.sessionId = null;
                 this.startTime = null;
 
                 this.updateStatus('ready', 'Ready');
                 this.startBtn.disabled = false;
+                this.pauseBtn.disabled = true;
+                this.pauseBtn.style.display = 'inline-block';
+                this.resumeBtn.disabled = true;
+                this.resumeBtn.style.display = 'none';
                 this.stopBtn.disabled = true;
 
                 this.hideSessionInfo();
@@ -470,6 +503,96 @@ class TranscriptRecorder {
             console.error('Error stopping recording:', error);
             this.updateStatus('error', 'Error: ' + error.message);
             this.stopBtn.disabled = false;
+        }
+    }
+
+    async pauseRecording() {
+        try {
+            if (!this.isRecording) {
+                console.warn('Cannot pause: not currently recording');
+                return;
+            }
+
+            if (this.isPaused) {
+                console.warn('Already paused');
+                return;
+            }
+
+            this.updateStatus('paused', 'Pausing...');
+            this.pauseBtn.disabled = true;
+
+            const response = await fetch('/api/pause', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                this.isPaused = true;
+                this.updateStatus('paused', 'Paused');
+
+                // Update button states
+                this.pauseBtn.style.display = 'none';
+                this.resumeBtn.style.display = 'inline-block';
+                this.resumeBtn.disabled = false;
+
+                console.log('Recording paused:', result);
+            } else {
+                throw new Error(result.error || 'Failed to pause recording');
+            }
+
+        } catch (error) {
+            console.error('Error pausing recording:', error);
+            this.updateStatus('error', 'Error: ' + error.message);
+            this.pauseBtn.disabled = false;
+        }
+    }
+
+    async resumeRecording() {
+        try {
+            if (!this.isRecording) {
+                console.warn('Cannot resume: not currently recording');
+                return;
+            }
+
+            if (!this.isPaused) {
+                console.warn('Not currently paused');
+                return;
+            }
+
+            this.updateStatus('recording', 'Resuming...');
+            this.resumeBtn.disabled = true;
+
+            const response = await fetch('/api/resume', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                this.isPaused = false;
+                this.updateStatus('recording', 'Recording');
+
+                // Update button states
+                this.resumeBtn.style.display = 'none';
+                this.pauseBtn.style.display = 'inline-block';
+                this.pauseBtn.disabled = false;
+
+                console.log('Recording resumed:', result);
+            } else {
+                throw new Error(result.error || 'Failed to resume recording');
+            }
+
+        } catch (error) {
+            console.error('Error resuming recording:', error);
+            this.updateStatus('error', 'Error: ' + error.message);
+            this.resumeBtn.disabled = false;
         }
     }
 
@@ -917,6 +1040,36 @@ class TranscriptRecorder {
         if (this.autoProcessingEnabled.checked) {
             this.autoProcessingStatus.textContent = 'Will start with recording';
         }
+    }
+
+    handleRecordingPaused(data) {
+        this.isPaused = true;
+        this.updateStatus('paused', 'Paused');
+
+        // Update button states
+        this.pauseBtn.style.display = 'none';
+        this.resumeBtn.style.display = 'inline-block';
+        this.resumeBtn.disabled = false;
+
+        // Update status
+        this.whisperStatus.textContent = 'Paused';
+
+        console.log('Recording paused via SSE:', data);
+    }
+
+    handleRecordingResumed(data) {
+        this.isPaused = false;
+        this.updateStatus('recording', 'Recording');
+
+        // Update button states
+        this.resumeBtn.style.display = 'none';
+        this.pauseBtn.style.display = 'inline-block';
+        this.pauseBtn.disabled = false;
+
+        // Update status
+        this.whisperStatus.textContent = 'Recording';
+
+        console.log('Recording resumed via SSE:', data);
     }
 
     addRawTranscript(eventData) {

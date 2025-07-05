@@ -6,6 +6,7 @@ Adapted from test_llm_deduplication.py for real-time Flask SSE integration
 
 import os
 import re
+import signal
 import subprocess
 import threading
 import uuid
@@ -45,6 +46,7 @@ class WhisperStreamProcessor:
         self.current_transcription_block: list[str] = []
         self.in_transcription_block = False
         self.is_running = False
+        self.is_paused = False
         self.session_id: Optional[str] = None
 
         # Whisper.cpp process management
@@ -117,6 +119,7 @@ class WhisperStreamProcessor:
             return {"error": "Streaming not running"}
 
         self.is_running = False
+        self.is_paused = False
 
         # Terminate whisper process
         if self.whisper_process:
@@ -147,6 +150,116 @@ class WhisperStreamProcessor:
 
         print(f"🛑 Stopped whisper.cpp streaming: {result}")
         return result
+
+    def pause_streaming(self) -> dict[str, Any]:
+        """
+        Pause whisper.cpp streaming process
+
+        Returns:
+            Dict with pause status
+        """
+        if not self.is_running:
+            return {"error": "Streaming not running", "success": False}
+
+        if self.is_paused:
+            return {"error": "Already paused", "success": False}
+
+        if not self.whisper_process:
+            return {"error": "No whisper process found", "success": False}
+
+        try:
+            # Send SIGSTOP to pause the process (Unix-like systems)
+            if hasattr(signal, "SIGSTOP"):
+                os.kill(self.whisper_process.pid, signal.SIGSTOP)
+                self.is_paused = True
+                print(
+                    f"⏸️  Paused whisper.cpp streaming (PID: {self.whisper_process.pid})"
+                )
+
+                # Notify callback of pause
+                if self.callback:
+                    self.callback(
+                        {
+                            "type": "paused",
+                            "message": "Whisper.cpp streaming paused",
+                            "session_id": self.session_id,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
+
+                return {"success": True, "message": "Streaming paused"}
+            else:
+                return {
+                    "error": "Pause not supported on this platform",
+                    "success": False,
+                }
+
+        except Exception as e:
+            print(f"⚠️  Error pausing whisper process: {e}")
+            return {"error": f"Failed to pause: {e}", "success": False}
+
+    def resume_streaming(self) -> dict[str, Any]:
+        """
+        Resume whisper.cpp streaming process
+
+        Returns:
+            Dict with resume status
+        """
+        if not self.is_running:
+            return {"error": "Streaming not running", "success": False}
+
+        if not self.is_paused:
+            return {"error": "Not currently paused", "success": False}
+
+        if not self.whisper_process:
+            return {"error": "No whisper process found", "success": False}
+
+        try:
+            # Send SIGCONT to resume the process (Unix-like systems)
+            if hasattr(signal, "SIGCONT"):
+                os.kill(self.whisper_process.pid, signal.SIGCONT)
+                self.is_paused = False
+                print(
+                    f"▶️  Resumed whisper.cpp streaming (PID: {self.whisper_process.pid})"
+                )
+
+                # Notify callback of resume
+                if self.callback:
+                    self.callback(
+                        {
+                            "type": "resumed",
+                            "message": "Whisper.cpp streaming resumed",
+                            "session_id": self.session_id,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
+
+                return {"success": True, "message": "Streaming resumed"}
+            else:
+                return {
+                    "error": "Resume not supported on this platform",
+                    "success": False,
+                }
+
+        except Exception as e:
+            print(f"⚠️  Error resuming whisper process: {e}")
+            return {"error": f"Failed to resume: {e}", "success": False}
+
+    def get_streaming_status(self) -> dict[str, Any]:
+        """
+        Get current streaming status
+
+        Returns:
+            Dict with current status information
+        """
+        return {
+            "is_running": self.is_running,
+            "is_paused": self.is_paused,
+            "session_id": self.session_id,
+            "audio_source": self.audio_source,
+            "total_transcripts": self.total_transcripts,
+            "accumulated_transcripts": len(self.accumulated_transcripts),
+        }
 
     def get_accumulated_transcripts(self) -> list[dict[str, Any]]:
         """Get current accumulated transcripts"""
