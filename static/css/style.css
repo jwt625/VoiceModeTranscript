@@ -370,6 +370,43 @@ header h1 {
     color: #a1a1a6;
 }
 
+.queue-status {
+    font-size: 14px;
+    color: #ff9500;
+    background: rgba(255, 149, 0, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 149, 0, 0.3);
+}
+
+.llm-activity {
+    font-size: 13px;
+    color: #a1a1a6;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #3a3a3a;
+}
+
+.activity-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.activity-item:last-child {
+    margin-bottom: 0;
+}
+
+.activity-label {
+    color: #8e8e93;
+}
+
+.activity-item span:last-child {
+    color: #ffffff;
+    font-weight: 500;
+}
+
 /* Processing Controls Container */
 .processing-controls {
     display: flex;

@@ -1110,6 +1110,37 @@ def get_transcript(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/llm-status")
+def get_llm_status():
+    """Get LLM processor status and queue information"""
+    global llm_processor
+
+    try:
+        if not llm_processor:
+            return jsonify(
+                {"success": False, "error": "LLM processor not available"}
+            ), 503
+
+        # Get queue status
+        queue_status = llm_processor.get_queue_status()
+
+        # Get processor stats
+        stats = llm_processor.get_stats()
+
+        return jsonify(
+            {
+                "success": True,
+                "is_processing": llm_processor.is_processing,
+                "queue_length": len(queue_status),
+                "queue_jobs": queue_status,
+                "stats": stats,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/process-llm", methods=["POST"])
 def process_llm():
     """Trigger LLM processing of accumulated transcripts"""

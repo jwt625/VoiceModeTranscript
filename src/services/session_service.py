@@ -194,6 +194,16 @@ class SessionService:
                 f"📝 Generating summary for session {session_id} with {len(transcript_dicts)} processed transcripts..."
             )
 
+            # Send summary start event via SSE
+            self._send_session_event(
+                "session_summary_start",
+                {
+                    "session_id": session_id,
+                    "transcript_count": len(transcript_dicts),
+                    "message": "📝 Generating session summary...",
+                },
+            )
+
             # Generate summary using LLM processor
             summary_result = self.llm_processor.generate_session_summary(
                 transcript_dicts, session_id
@@ -298,6 +308,16 @@ class SessionService:
                 }
                 for t in processed_transcripts
             ]
+
+            # Send summary start event via SSE
+            self._send_session_event(
+                "session_summary_start",
+                {
+                    "session_id": session_id,
+                    "transcript_count": len(transcript_dicts),
+                    "message": "📝 Generating session summary...",
+                },
+            )
 
             # Generate summary synchronously
             summary_result = self.llm_processor.generate_session_summary(
