@@ -369,6 +369,14 @@ class TranscriptRecorder {
                         console.log('❌ Whisper error:', data);
                         this.handleWhisperError(data);
                         break;
+                    case 'session_summary_generated':
+                        console.log('📝 Session summary generated:', data);
+                        this.handleSessionSummaryGenerated(data);
+                        break;
+                    case 'session_summary_error':
+                        console.log('❌ Session summary error:', data);
+                        this.handleSessionSummaryError(data);
+                        break;
                     case 'heartbeat':
                         console.log('💓 Heartbeat received');
                         // Handle heartbeat with optional state sync
@@ -1241,6 +1249,29 @@ class TranscriptRecorder {
         if (this.rawTranscriptCount > 0) {
             this.processLLMBtn.disabled = false;
         }
+    }
+
+    handleSessionSummaryGenerated(data) {
+        console.log('📝 Session summary generated:', data);
+
+        // Show success notification
+        this.showNotification('success', `📝 Session summary generated: ${data.summary.substring(0, 100)}...`);
+
+        // If the Database Inspector is open, refresh the sessions table to show the new summary
+        if (this.databaseModal && this.databaseModal.style.display !== 'none') {
+            this.loadSessionsTable();
+        }
+
+        // Log the summary and keywords for debugging
+        console.log('Summary:', data.summary);
+        console.log('Keywords:', data.keywords);
+    }
+
+    handleSessionSummaryError(data) {
+        console.log('❌ Session summary error:', data);
+
+        // Show error notification
+        this.showErrorMessage(`Failed to generate session summary: ${data.error}`);
     }
 
     // Auto-processing methods
