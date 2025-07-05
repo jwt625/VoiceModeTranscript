@@ -169,6 +169,36 @@ header h1 {
     background-color: #6a6a6c;
 }
 
+.btn-copy {
+    background: #007aff;
+    color: white;
+    border: 1px solid #007aff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-copy:hover {
+    background: #0056cc;
+    border-color: #0056cc;
+}
+
+.btn-copy:active {
+    background: #004499;
+    transform: scale(0.98);
+}
+
+.btn-copy.copied {
+    background: #34c759;
+    border-color: #34c759;
+}
+
+.btn-copy.copied:hover {
+    background: #30b350;
+}
+
 .btn-save {
     background-color: #34c759;
     color: white;

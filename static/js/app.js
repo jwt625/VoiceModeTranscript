@@ -96,6 +96,10 @@ class TranscriptRecorder {
         this.toggleRawBtn = document.getElementById('toggle-raw-btn');
         this.toggleProcessedBtn = document.getElementById('toggle-processed-btn');
 
+        // Panel copy buttons
+        this.copyRawBtn = document.getElementById('copy-raw-btn');
+        this.copyProcessedBtn = document.getElementById('copy-processed-btn');
+
         // Processed actions
         this.saveProcessedBtn = document.getElementById('save-processed-btn');
         this.exportProcessedBtn = document.getElementById('export-processed-btn');
@@ -165,6 +169,10 @@ class TranscriptRecorder {
         // Panel toggles
         this.toggleRawBtn.addEventListener('click', () => this.toggleRawPanel());
         this.toggleProcessedBtn.addEventListener('click', () => this.toggleProcessedPanel());
+
+        // Copy buttons
+        this.copyRawBtn.addEventListener('click', () => this.copyRawTranscripts());
+        this.copyProcessedBtn.addEventListener('click', () => this.copyProcessedTranscripts());
 
         // Processed transcript actions
         if (this.saveProcessedBtn) {
@@ -2860,6 +2868,77 @@ class TranscriptRecorder {
                 notification.style.display = 'none';
             }, 300);
         }, 5000);
+    }
+
+    async copyRawTranscripts() {
+        try {
+            // Get all raw transcript text content
+            const rawItems = this.rawTranscriptContent.querySelectorAll('.raw-transcript-item');
+            if (rawItems.length === 0) {
+                this.showCopyFeedback(this.copyRawBtn, 'No transcripts to copy', false);
+                return;
+            }
+
+            let copyText = '';
+            rawItems.forEach((item) => {
+                const timestamp = item.querySelector('.timestamp')?.textContent || '';
+                const audioSource = item.querySelector('.source-label')?.textContent || '';
+                const sequence = item.querySelector('.sequence')?.textContent || '';
+                const text = item.querySelector('.text')?.textContent || '';
+
+                copyText += `${timestamp} [${audioSource}] ${sequence}\n${text}\n\n`;
+            });
+
+            await navigator.clipboard.writeText(copyText.trim());
+            this.showCopyFeedback(this.copyRawBtn, 'Copied!', true);
+            console.log('📋 Raw transcripts copied to clipboard');
+        } catch (error) {
+            console.error('Failed to copy raw transcripts:', error);
+            this.showCopyFeedback(this.copyRawBtn, 'Copy failed', false);
+        }
+    }
+
+    async copyProcessedTranscripts() {
+        try {
+            // Get all processed transcript text content
+            const processedItems = this.processedTranscriptContent.querySelectorAll('.processed-transcript-item');
+            if (processedItems.length === 0) {
+                this.showCopyFeedback(this.copyProcessedBtn, 'No transcripts to copy', false);
+                return;
+            }
+
+            let copyText = '';
+            processedItems.forEach((item) => {
+                const timestamp = item.querySelector('.timestamp')?.textContent || '';
+                const text = item.querySelector('.text')?.textContent || '';
+
+                copyText += `${timestamp}\n${text}\n\n`;
+            });
+
+            await navigator.clipboard.writeText(copyText.trim());
+            this.showCopyFeedback(this.copyProcessedBtn, 'Copied!', true);
+            console.log('📋 Processed transcripts copied to clipboard');
+        } catch (error) {
+            console.error('Failed to copy processed transcripts:', error);
+            this.showCopyFeedback(this.copyProcessedBtn, 'Copy failed', false);
+        }
+    }
+
+    showCopyFeedback(button, message, success) {
+        const originalText = button.textContent;
+        const originalClass = button.className;
+
+        // Update button appearance
+        button.textContent = message;
+        if (success) {
+            button.classList.add('copied');
+        }
+
+        // Reset after 2 seconds
+        setTimeout(() => {
+            button.textContent = originalText;
+            button.className = originalClass;
+        }, 2000);
     }
 }
 
