@@ -181,8 +181,8 @@ class TranscriptRecorder {
         this.copyProcessedBtn.addEventListener('click', () => this.copyProcessedTranscripts());
 
         // Panel visibility controls
-        this.showRawBtn.addEventListener('click', () => this.showRawPanel());
-        this.showProcessedBtn.addEventListener('click', () => this.showProcessedPanel());
+        this.showRawBtn.addEventListener('click', () => this.toggleRawPanelVisibility());
+        this.showProcessedBtn.addEventListener('click', () => this.toggleProcessedPanelVisibility());
         this.showBothBtn.addEventListener('click', () => this.showBothPanels());
 
         // Processed transcript actions
@@ -2895,41 +2895,73 @@ class TranscriptRecorder {
         this.updateGridLayout();
     }
 
-    showRawPanel() {
+    toggleRawPanelVisibility() {
         const rawPanel = document.querySelector('.raw-panel');
+        this.rawPanelVisible = !this.rawPanelVisible;
 
-        rawPanel.classList.remove('hidden');
-        this.rawPanelVisible = true;
-        this.toggleRawBtn.textContent = '👁️ Hide';
+        if (this.rawPanelVisible) {
+            rawPanel.classList.remove('hidden');
+            this.toggleRawBtn.textContent = '👁️ Hide';
+            console.log('📝 Raw panel shown');
+        } else {
+            rawPanel.classList.add('hidden');
+            this.toggleRawBtn.textContent = '👁️ Show';
+            console.log('📝 Raw panel hidden');
+        }
 
         // Update visibility button states
         this.updateVisibilityButtonStates();
 
         // Update grid layout
         this.updateGridLayout();
-
-        console.log('📝 Raw panel shown');
     }
 
-    showProcessedPanel() {
+    toggleProcessedPanelVisibility() {
         const processedPanel = document.querySelector('.processed-panel');
+        this.processedPanelVisible = !this.processedPanelVisible;
 
-        processedPanel.classList.remove('hidden');
-        this.processedPanelVisible = true;
-        this.toggleProcessedBtn.textContent = '👁️ Hide';
+        if (this.processedPanelVisible) {
+            processedPanel.classList.remove('hidden');
+            this.toggleProcessedBtn.textContent = '👁️ Hide';
+            console.log('✨ Processed panel shown');
+        } else {
+            processedPanel.classList.add('hidden');
+            this.toggleProcessedBtn.textContent = '👁️ Show';
+            console.log('✨ Processed panel hidden');
+        }
 
         // Update visibility button states
         this.updateVisibilityButtonStates();
 
         // Update grid layout
         this.updateGridLayout();
-
-        console.log('✨ Processed panel shown');
     }
 
     showBothPanels() {
-        this.showRawPanel();
-        this.showProcessedPanel();
+        // Always show both panels (don't toggle)
+        const rawPanel = document.querySelector('.raw-panel');
+        const processedPanel = document.querySelector('.processed-panel');
+
+        // Show raw panel if hidden
+        if (!this.rawPanelVisible) {
+            rawPanel.classList.remove('hidden');
+            this.rawPanelVisible = true;
+            this.toggleRawBtn.textContent = '👁️ Hide';
+        }
+
+        // Show processed panel if hidden
+        if (!this.processedPanelVisible) {
+            processedPanel.classList.remove('hidden');
+            this.processedPanelVisible = true;
+            this.toggleProcessedBtn.textContent = '👁️ Hide';
+        }
+
+        // Update visibility button states
+        this.updateVisibilityButtonStates();
+
+        // Update grid layout
+        this.updateGridLayout();
+
         console.log('👁️ Both panels shown');
     }
 
