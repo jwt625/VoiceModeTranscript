@@ -32,6 +32,7 @@ class TranscriptRecorder {
         this.setupSSEConnection();
         this.setupKeyboardListeners();
         this.checkMobileCompatibility();
+        this.initializeVisibilityControls();
 
         // Recover server state on page load
         this.recoverServerState();
@@ -99,6 +100,11 @@ class TranscriptRecorder {
         // Panel copy buttons
         this.copyRawBtn = document.getElementById('copy-raw-btn');
         this.copyProcessedBtn = document.getElementById('copy-processed-btn');
+
+        // Panel visibility controls
+        this.showRawBtn = document.getElementById('show-raw-btn');
+        this.showProcessedBtn = document.getElementById('show-processed-btn');
+        this.showBothBtn = document.getElementById('show-both-btn');
 
         // Processed actions
         this.saveProcessedBtn = document.getElementById('save-processed-btn');
@@ -173,6 +179,11 @@ class TranscriptRecorder {
         // Copy buttons
         this.copyRawBtn.addEventListener('click', () => this.copyRawTranscripts());
         this.copyProcessedBtn.addEventListener('click', () => this.copyProcessedTranscripts());
+
+        // Panel visibility controls
+        this.showRawBtn.addEventListener('click', () => this.showRawPanel());
+        this.showProcessedBtn.addEventListener('click', () => this.showProcessedPanel());
+        this.showBothBtn.addEventListener('click', () => this.showBothPanels());
 
         // Processed transcript actions
         if (this.saveProcessedBtn) {
@@ -1433,6 +1444,10 @@ class TranscriptRecorder {
             panel.classList.add('hidden');
             this.toggleRawBtn.textContent = '👁️ Show';
         }
+
+        // Update visibility controls
+        this.updateVisibilityButtonStates();
+        this.updateGridLayout();
     }
 
     toggleProcessedPanel() {
@@ -1446,6 +1461,10 @@ class TranscriptRecorder {
             panel.classList.add('hidden');
             this.toggleProcessedBtn.textContent = '👁️ Show';
         }
+
+        // Update visibility controls
+        this.updateVisibilityButtonStates();
+        this.updateGridLayout();
     }
 
     clearRawTranscriptPlaceholder() {
@@ -2868,6 +2887,79 @@ class TranscriptRecorder {
                 notification.style.display = 'none';
             }, 300);
         }, 5000);
+    }
+
+    initializeVisibilityControls() {
+        // Set initial button states based on panel visibility
+        this.updateVisibilityButtonStates();
+        this.updateGridLayout();
+    }
+
+    showRawPanel() {
+        const rawPanel = document.querySelector('.raw-panel');
+
+        rawPanel.classList.remove('hidden');
+        this.rawPanelVisible = true;
+        this.toggleRawBtn.textContent = '👁️ Hide';
+
+        // Update visibility button states
+        this.updateVisibilityButtonStates();
+
+        // Update grid layout
+        this.updateGridLayout();
+
+        console.log('📝 Raw panel shown');
+    }
+
+    showProcessedPanel() {
+        const processedPanel = document.querySelector('.processed-panel');
+
+        processedPanel.classList.remove('hidden');
+        this.processedPanelVisible = true;
+        this.toggleProcessedBtn.textContent = '👁️ Hide';
+
+        // Update visibility button states
+        this.updateVisibilityButtonStates();
+
+        // Update grid layout
+        this.updateGridLayout();
+
+        console.log('✨ Processed panel shown');
+    }
+
+    showBothPanels() {
+        this.showRawPanel();
+        this.showProcessedPanel();
+        console.log('👁️ Both panels shown');
+    }
+
+    updateVisibilityButtonStates() {
+        // Update button active states based on panel visibility
+        if (this.rawPanelVisible) {
+            this.showRawBtn.classList.add('active');
+        } else {
+            this.showRawBtn.classList.remove('active');
+        }
+
+        if (this.processedPanelVisible) {
+            this.showProcessedBtn.classList.add('active');
+        } else {
+            this.showProcessedBtn.classList.remove('active');
+        }
+    }
+
+    updateGridLayout() {
+        const container = document.querySelector('.dual-transcript-container');
+
+        // Remove existing layout classes
+        container.classList.remove('single-panel');
+
+        // Add single-panel class if only one panel is visible
+        if (this.rawPanelVisible && !this.processedPanelVisible) {
+            container.classList.add('single-panel');
+        } else if (!this.rawPanelVisible && this.processedPanelVisible) {
+            container.classList.add('single-panel');
+        }
     }
 
     async copyRawTranscripts() {
