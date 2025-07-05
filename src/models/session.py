@@ -1,5 +1,6 @@
 """Session model for database operations."""
 
+import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,10 +20,22 @@ class Session:
     avg_confidence: float = 0.0
     confidence_count: int = 0
     confidence_sum: float = 0.0
+    bookmarked: bool = False
+    summary: Optional[str] = None
+    keywords: Optional[list[str]] = None
+    summary_generated_at: Optional[str] = None
 
     @classmethod
     def from_db_row(cls, row: tuple) -> "Session":
         """Create Session instance from database row."""
+        # Handle variable row lengths for backward compatibility
+        keywords = None
+        if len(row) > 13 and row[13]:
+            try:
+                keywords = json.loads(row[13])
+            except (json.JSONDecodeError, TypeError):
+                keywords = None
+
         return cls(
             id=row[0],
             start_time=row[1],
@@ -35,6 +48,10 @@ class Session:
             avg_confidence=row[8],
             confidence_count=row[9],
             confidence_sum=row[10],
+            bookmarked=bool(row[11]) if len(row) > 11 else False,
+            summary=row[12] if len(row) > 12 else None,
+            keywords=keywords,
+            summary_generated_at=row[14] if len(row) > 14 else None,
         )
 
     def to_dict(self) -> dict:
@@ -51,4 +68,8 @@ class Session:
             "avg_confidence": self.avg_confidence,
             "confidence_count": self.confidence_count,
             "confidence_sum": self.confidence_sum,
+            "bookmarked": self.bookmarked,
+            "summary": self.summary,
+            "keywords": self.keywords,
+            "summary_generated_at": self.summary_generated_at,
         }

@@ -1977,7 +1977,10 @@ def init_database():
             avg_confidence REAL DEFAULT 0.0,
             confidence_count INTEGER DEFAULT 0,
             confidence_sum REAL DEFAULT 0.0,
-            bookmarked BOOLEAN DEFAULT 0
+            bookmarked BOOLEAN DEFAULT 0,
+            summary TEXT,
+            keywords TEXT,
+            summary_generated_at TEXT
         )
     """
     )
@@ -2092,6 +2095,25 @@ def init_database():
             "ALTER TABLE sessions ADD COLUMN confidence_sum REAL DEFAULT 0.0"
         )
         print("ℹ️  Added confidence_sum column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add summary columns to existing sessions table if they don't exist
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
+        print("ℹ️  Added summary column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN keywords TEXT")
+        print("ℹ️  Added keywords column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN summary_generated_at TEXT")
+        print("ℹ️  Added summary_generated_at column to sessions table")
     except sqlite3.OperationalError:
         pass  # Column already exists
 

@@ -37,7 +37,11 @@ def init_database() -> None:
                 total_words INTEGER DEFAULT 0,
                 avg_confidence REAL DEFAULT 0.0,
                 confidence_count INTEGER DEFAULT 0,
-                confidence_sum REAL DEFAULT 0.0
+                confidence_sum REAL DEFAULT 0.0,
+                bookmarked BOOLEAN DEFAULT 0,
+                summary TEXT,
+                keywords TEXT,
+                summary_generated_at TEXT
             )
         """
         )
