@@ -480,11 +480,15 @@ def start_recording():
 
         # Start recording
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now()
         recording_state.update({
             'is_recording': True,
             'session_id': session_id,
-            'start_time': datetime.now().isoformat()
+            'start_time': start_time.isoformat()
         })
+
+        # Create session record in database
+        create_session_record(session_id, start_time.isoformat())
 
         # Send recording started message via SSE
         try:
@@ -599,6 +603,19 @@ def stop_recording():
         except queue.Full:
             print("⚠️ Stream queue full, dropping message")
 
+        # Update session with end time and duration
+        end_time = datetime.now()
+        start_time_str = recording_state.get('start_time')
+        if start_time_str:
+            try:
+                start_time = datetime.fromisoformat(start_time_str)
+                duration_seconds = int((end_time - start_time).total_seconds())
+                update_session_end_time(session_id, end_time.isoformat(), duration_seconds)
+                print(f"📊 Session {session_id} ended. Duration: {duration_seconds} seconds")
+            except Exception as e:
+                print(f"⚠️ Error calculating session duration: {e}")
+                update_session_end_time(session_id, end_time.isoformat(), None)
+
         # Calculate and save session quality metrics
         calculate_and_save_session_metrics(session_id)
 
@@ -619,38 +636,78 @@ def get_sessions():
         conn = sqlite3.connect('transcripts.db')
         cursor = conn.cursor()
 
-        # Get sessions with transcript counts from raw_transcripts table
+        # Get all sessions from raw_transcripts (for backward compatibility)
         cursor.execute('''
             SELECT
                 session_id,
                 COUNT(*) as raw_transcript_count,
-                MIN(timestamp) as start_time,
-                MAX(timestamp) as end_time,
+                MIN(timestamp) as transcript_start_time,
+                MAX(timestamp) as transcript_end_time,
                 COUNT(DISTINCT audio_source) as audio_sources
             FROM raw_transcripts
             GROUP BY session_id
+        ''')
+
+        transcript_sessions = {row[0]: row for row in cursor.fetchall()}
+
+        # Get session records from sessions table (preferred source)
+        cursor.execute('''
+            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence
+            FROM sessions
             ORDER BY start_time DESC
         ''')
 
-        sessions = []
-        for row in cursor.fetchall():
-            session_id = row[0]
+        session_records = {row[0]: row for row in cursor.fetchall()}
 
-            # Get processed transcript count for this session
-            cursor.execute('''
-                SELECT COUNT(*) FROM processed_transcripts WHERE session_id = ?
-            ''', (session_id,))
-            processed_count = cursor.fetchone()[0]
+        # Get processed transcript counts for all sessions at once
+        cursor.execute('''
+            SELECT session_id, COUNT(*) as processed_count
+            FROM processed_transcripts
+            GROUP BY session_id
+        ''')
+        processed_counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Combine data, preferring sessions table when available
+        sessions = []
+        all_session_ids = set(transcript_sessions.keys()) | set(session_records.keys())
+
+        for session_id in all_session_ids:
+            transcript_data = transcript_sessions.get(session_id)
+            session_data = session_records.get(session_id)
+            processed_count = processed_counts.get(session_id, 0)
+
+            # Use session table data if available, otherwise fall back to transcript data
+            if session_data:
+                start_time = session_data[1]
+                end_time = session_data[2]
+                duration = session_data[3]
+                total_segments = session_data[4] or 0
+                total_words = session_data[5] or 0
+                avg_confidence = session_data[6] or 0.0
+            else:
+                start_time = transcript_data[2] if transcript_data else None
+                end_time = transcript_data[3] if transcript_data else None
+                duration = None
+                total_segments = 0
+                total_words = 0
+                avg_confidence = 0.0
 
             sessions.append({
                 'session_id': session_id,
-                'raw_transcript_count': row[1],
+                'raw_transcript_count': transcript_data[1] if transcript_data else 0,
                 'processed_transcript_count': processed_count,
-                'start_time': row[2],
-                'end_time': row[3],
-                'audio_sources': row[4],
+                'start_time': start_time,
+                'end_time': end_time,
+                'duration': duration,
+                'audio_sources': transcript_data[4] if transcript_data else 0,
+                'total_segments': total_segments,
+                'total_words': total_words,
+                'avg_confidence': avg_confidence,
                 'display_name': f"Session {session_id.replace('session_', '')}"
             })
+
+        # Sort by start time (most recent first)
+        sessions.sort(key=lambda x: x['start_time'] or '', reverse=True)
 
         conn.close()
 
@@ -1037,8 +1094,13 @@ def get_database_stats():
         cursor.execute('SELECT COUNT(*) FROM processed_transcripts')
         processed_count = cursor.fetchone()[0]
 
-        cursor.execute('SELECT COUNT(*) FROM sessions')
+        # Get actual session count from raw_transcripts (more accurate than sessions table)
+        cursor.execute('SELECT COUNT(DISTINCT session_id) FROM raw_transcripts')
         sessions_count = cursor.fetchone()[0]
+
+        # Also get sessions table count for reference
+        cursor.execute('SELECT COUNT(*) FROM sessions')
+        sessions_table_count = cursor.fetchone()[0]
 
         cursor.execute('SELECT COUNT(*) FROM transcripts')
         legacy_count = cursor.fetchone()[0]
@@ -1069,6 +1131,7 @@ def get_database_stats():
                 'raw_transcripts': raw_count,
                 'processed_transcripts': processed_count,
                 'sessions': sessions_count,
+                'sessions_table': sessions_table_count,
                 'legacy_transcripts': legacy_count
             },
             'recent_sessions': recent_sessions
@@ -1381,6 +1444,48 @@ def on_audio_chunk(audio_data, source='microphone', audio_level=None, is_transcr
             print(f"Error processing transcript: {e}")
 
 # SSE doesn't need connection handlers - connections are automatic
+
+def create_session_record(session_id, start_time):
+    """Create a new session record in the database"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO sessions (id, start_time)
+            VALUES (?, ?)
+        ''', (session_id, start_time))
+
+        conn.commit()
+        conn.close()
+        print(f"📊 Created session record: {session_id}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error creating session record: {e}")
+        return False
+
+
+def update_session_end_time(session_id, end_time, duration_seconds):
+    """Update session with end time and duration"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE sessions SET end_time = ?, duration = ?
+            WHERE id = ?
+        ''', (end_time, duration_seconds, session_id))
+
+        conn.commit()
+        conn.close()
+        print(f"📊 Updated session {session_id} end time and duration")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error updating session end time: {e}")
+        return False
+
 
 def init_database():
     """Initialize SQLite database with dual transcript support"""
