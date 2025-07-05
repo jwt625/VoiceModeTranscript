@@ -27,6 +27,8 @@
 
         <div class="controls">
             <button id="start-btn" class="btn btn-start">🎤 Start Recording</button>
+            <button id="pause-btn" class="btn btn-pause" disabled>⏸️ Pause</button>
+            <button id="resume-btn" class="btn btn-resume" disabled style="display: none;">▶️ Resume</button>
             <button id="stop-btn" class="btn btn-stop" disabled>⏹️ Stop Recording</button>
             <button id="process-llm-btn" class="btn btn-llm" disabled>🤖 Process with LLM</button>
             <button id="clear-btn" class="btn btn-clear">🗑️ Clear Transcript</button>
@@ -247,6 +249,7 @@
             <h4>⌨️ Keyboard Shortcuts</h4>
             <div class="shortcuts">
                 <span><kbd>Enter</kbd> - Process with LLM</span>
+                <span><kbd>Space</kbd> - Pause/Resume Recording</span>
                 <span><kbd>Ctrl+C</kbd> - Stop Recording</span>
             </div>
         </div>

@@ -784,6 +784,164 @@ def stop_recording():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/pause", methods=["POST"])
+def pause_recording():
+    """Pause whisper.cpp streaming and transcription"""
+    global mic_whisper_processor, system_whisper_processor, recording_state
+
+    try:
+        if not recording_state["is_recording"]:
+            return jsonify({"error": "Not currently recording"}), 400
+
+        # Pause both whisper processors
+        results = {}
+
+        if mic_whisper_processor:
+            mic_result = mic_whisper_processor.pause_streaming()
+            results["microphone"] = mic_result
+
+        if system_whisper_processor:
+            system_result = system_whisper_processor.pause_streaming()
+            results["system"] = system_result
+
+        # Check if any pause operation failed
+        failed_operations = [
+            k for k, v in results.items() if not v.get("success", False)
+        ]
+
+        if failed_operations:
+            error_messages = [
+                f"{k}: {results[k].get('error', 'Unknown error')}"
+                for k in failed_operations
+            ]
+            return jsonify(
+                {
+                    "error": f"Failed to pause: {', '.join(error_messages)}",
+                    "results": results,
+                }
+            ), 500
+
+        # Send pause message via SSE
+        try:
+            stream_queue.put(
+                {
+                    "type": "recording_paused",
+                    "session_id": recording_state["session_id"],
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "⏸️ Recording paused",
+                },
+                block=False,
+            )
+        except queue.Full:
+            print("⚠️ Stream queue full, dropping pause message")
+
+        return jsonify(
+            {"success": True, "message": "Recording paused", "results": results}
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/resume", methods=["POST"])
+def resume_recording():
+    """Resume whisper.cpp streaming and transcription"""
+    global mic_whisper_processor, system_whisper_processor, recording_state
+
+    try:
+        if not recording_state["is_recording"]:
+            return jsonify({"error": "Not currently recording"}), 400
+
+        # Resume both whisper processors
+        results = {}
+
+        if mic_whisper_processor:
+            mic_result = mic_whisper_processor.resume_streaming()
+            results["microphone"] = mic_result
+
+        if system_whisper_processor:
+            system_result = system_whisper_processor.resume_streaming()
+            results["system"] = system_result
+
+        # Check if any resume operation failed
+        failed_operations = [
+            k for k, v in results.items() if not v.get("success", False)
+        ]
+
+        if failed_operations:
+            error_messages = [
+                f"{k}: {results[k].get('error', 'Unknown error')}"
+                for k in failed_operations
+            ]
+            return jsonify(
+                {
+                    "error": f"Failed to resume: {', '.join(error_messages)}",
+                    "results": results,
+                }
+            ), 500
+
+        # Send resume message via SSE
+        try:
+            stream_queue.put(
+                {
+                    "type": "recording_resumed",
+                    "session_id": recording_state["session_id"],
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "▶️ Recording resumed",
+                },
+                block=False,
+            )
+        except queue.Full:
+            print("⚠️ Stream queue full, dropping resume message")
+
+        return jsonify(
+            {"success": True, "message": "Recording resumed", "results": results}
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/status", methods=["GET"])
+def get_recording_status():
+    """Get current recording and pause status"""
+    global mic_whisper_processor, system_whisper_processor, recording_state
+
+    try:
+        status = {
+            "is_recording": recording_state["is_recording"],
+            "session_id": recording_state.get("session_id"),
+            "start_time": recording_state.get("start_time"),
+        }
+
+        # Add pause status if recording
+        if recording_state["is_recording"]:
+            mic_status = (
+                mic_whisper_processor.get_streaming_status()
+                if mic_whisper_processor
+                else {}
+            )
+            system_status = (
+                system_whisper_processor.get_streaming_status()
+                if system_whisper_processor
+                else {}
+            )
+
+            status.update(
+                {
+                    "microphone": mic_status,
+                    "system": system_status,
+                    "is_paused": mic_status.get("is_paused", False)
+                    or system_status.get("is_paused", False),
+                }
+            )
+
+        return jsonify(status)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/sessions")
 def get_sessions():
     """Get list of recording sessions with transcript counts"""

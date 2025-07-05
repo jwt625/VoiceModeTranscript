@@ -118,6 +118,26 @@ header h1 {
     transform: translateY(-1px);
 }
 
+.btn-pause {
+    background-color: #ff9500;
+    color: white;
+}
+
+.btn-pause:hover:not(:disabled) {
+    background-color: #ffad33;
+    transform: translateY(-1px);
+}
+
+.btn-resume {
+    background-color: #34c759;
+    color: white;
+}
+
+.btn-resume:hover:not(:disabled) {
+    background-color: #30d158;
+    transform: translateY(-1px);
+}
+
 .btn-clear {
     background-color: #48484a;
     color: white;
