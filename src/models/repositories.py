@@ -122,15 +122,43 @@ class SessionRepository:
             cursor.execute(
                 """
                 SELECT id, start_time, end_time, duration, total_segments,
-                       raw_transcript_count, processed_transcript_count, total_words,
-                       avg_confidence, confidence_count, confidence_sum
+                       total_words, avg_confidence, confidence_count, confidence_sum,
+                       bookmarked, summary, keywords, summary_generated_at
                 FROM sessions WHERE id = ?
             """,
                 (session_id,),
             )
 
             row = cursor.fetchone()
-            return Session.from_db_row(row) if row else None
+            if row:
+                # Create Session from get_by_id row format
+                keywords = []
+                if len(row) > 11 and row[11]:
+                    try:
+                        import json
+
+                        keywords = json.loads(row[11])
+                    except (json.JSONDecodeError, TypeError):
+                        keywords = []
+
+                return Session(
+                    id=row[0],
+                    start_time=row[1],
+                    end_time=row[2],
+                    duration=row[3],
+                    total_segments=row[4],
+                    raw_transcript_count=0,  # Not available in this query
+                    processed_transcript_count=0,  # Not available in this query
+                    total_words=row[5],
+                    avg_confidence=row[6],
+                    confidence_count=row[7],
+                    confidence_sum=row[8],
+                    bookmarked=bool(row[9]) if len(row) > 9 else False,
+                    summary=row[10] if len(row) > 10 else None,
+                    keywords=keywords,
+                    summary_generated_at=row[12] if len(row) > 12 else None,
+                )
+            return None
 
     def update_metrics(
         self,
