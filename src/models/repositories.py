@@ -187,6 +187,37 @@ class SessionRepository:
             print(f"❌ Error finalizing session: {e}")
             return False
 
+    def update_summary(
+        self,
+        session_id: str,
+        summary: str,
+        keywords: list[str],
+        summary_generated_at: str,
+    ) -> bool:
+        """Update session with summary and keywords."""
+        try:
+            import json
+
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+
+                # Convert keywords list to JSON string
+                keywords_json = json.dumps(keywords) if keywords else None
+
+                cursor.execute(
+                    """
+                    UPDATE sessions
+                    SET summary = ?, keywords = ?, summary_generated_at = ?
+                    WHERE id = ?
+                """,
+                    (summary, keywords_json, summary_generated_at, session_id),
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Error updating session summary: {e}")
+            return False
+
 
 class RawTranscriptRepository:
     """Repository for raw transcript database operations."""
