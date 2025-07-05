@@ -2194,10 +2194,10 @@ def get_session_metadata(session_id):
         conn = sqlite3.connect("transcripts.db")
         cursor = conn.cursor()
 
-        # Get session info from sessions table
+        # Get session info from sessions table including bookmark status
         cursor.execute(
             """
-            SELECT start_time, end_time, duration, total_segments, total_words, avg_confidence
+            SELECT start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked
             FROM sessions
             WHERE id = ?
         """,
@@ -2251,8 +2251,12 @@ def get_session_metadata(session_id):
                     "total_segments": session_row[3],
                     "total_words": session_row[4],
                     "avg_confidence": session_row[5],
+                    "bookmarked": bool(session_row[6]),
                 }
             )
+        else:
+            # If no session row found, default bookmark status to false
+            metadata["bookmarked"] = False
 
         return metadata
 
@@ -2277,6 +2281,7 @@ def generate_txt_export(session_id, transcripts, metadata):
     # Header
     lines.append(f"Session Export: {session_id}")
     lines.append(f"Export Date: {metadata.get('export_timestamp', 'Unknown')}")
+    lines.append(f"Bookmarked: {'Yes' if metadata.get('bookmarked', False) else 'No'}")
     lines.append(f"Raw Transcripts: {metadata.get('raw_transcript_count', 0)}")
     lines.append(
         f"Processed Transcripts: {metadata.get('processed_transcript_count', 0)}"
