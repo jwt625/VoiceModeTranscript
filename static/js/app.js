@@ -114,6 +114,16 @@ class TranscriptRecorder {
         this.loadSessionBtn = document.getElementById('load-session-btn');
         this.selectedSessionInfo = document.getElementById('selected-session-info');
 
+        // Bookmark filtering elements
+        this.showBookmarkedOnlyCheckbox = document.getElementById('show-bookmarked-only');
+        this.bookmarkCountSpan = document.getElementById('bookmark-count');
+        this.bookmarkAllVisibleBtn = document.getElementById('bookmark-all-visible-btn');
+        this.clearAllBookmarksBtn = document.getElementById('clear-all-bookmarks-btn');
+
+        // Current session bookmark elements
+        this.currentSessionBookmark = document.getElementById('current-session-bookmark');
+        this.currentSessionBookmarkStar = document.getElementById('current-session-bookmark-star');
+
         // Export elements
         this.exportSessionBtn = document.getElementById('export-session-btn');
         this.exportOptions = document.getElementById('export-options');
@@ -187,6 +197,22 @@ class TranscriptRecorder {
         // Session browser controls
         if (this.loadSessionBtn) {
             this.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
+        }
+
+        // Bookmark filtering controls
+        if (this.showBookmarkedOnlyCheckbox) {
+            this.showBookmarkedOnlyCheckbox.addEventListener('change', () => this.onBookmarkFilterChange());
+        }
+        if (this.bookmarkAllVisibleBtn) {
+            this.bookmarkAllVisibleBtn.addEventListener('click', () => this.bookmarkAllVisible());
+        }
+        if (this.clearAllBookmarksBtn) {
+            this.clearAllBookmarksBtn.addEventListener('click', () => this.clearAllBookmarks());
+        }
+
+        // Current session bookmark
+        if (this.currentSessionBookmarkStar) {
+            this.currentSessionBookmarkStar.addEventListener('click', () => this.toggleCurrentSessionBookmark());
         }
 
         // Export controls
@@ -729,10 +755,21 @@ class TranscriptRecorder {
     showSessionInfo() {
         this.sessionInfo.style.display = 'block';
         this.sessionIdSpan.textContent = this.sessionId || 'Unknown';
+
+        // Show current session bookmark star
+        if (this.currentSessionBookmark) {
+            this.currentSessionBookmark.style.display = 'inline';
+            this.updateCurrentSessionBookmarkState();
+        }
     }
 
     hideSessionInfo() {
         this.sessionInfo.style.display = 'none';
+
+        // Hide current session bookmark star
+        if (this.currentSessionBookmark) {
+            this.currentSessionBookmark.style.display = 'none';
+        }
     }
 
     startDurationTimer() {
@@ -1542,6 +1579,14 @@ class TranscriptRecorder {
         // Show session browser controls
         this.sessionBrowserControls.style.display = 'block';
 
+        // Restore bookmark filter state from localStorage
+        if (this.showBookmarkedOnlyCheckbox) {
+            const savedFilter = localStorage.getItem('bookmarkFilter');
+            if (savedFilter !== null) {
+                this.showBookmarkedOnlyCheckbox.checked = savedFilter === 'true';
+            }
+        }
+
         // Reset selection state
         this.selectedSessionId = null;
         this.loadSessionBtn.disabled = true;
@@ -1555,13 +1600,27 @@ class TranscriptRecorder {
         await this.loadSessionsTable();
     }
 
-    async loadSessionsTable() {
+    async loadSessionsTable(bookmarkedOnly = null) {
         try {
-            const response = await fetch('/api/sessions');
+            // Use the checkbox state if no explicit filter provided
+            if (bookmarkedOnly === null && this.showBookmarkedOnlyCheckbox) {
+                bookmarkedOnly = this.showBookmarkedOnlyCheckbox.checked;
+            }
+
+            // Build URL with filter parameter
+            let url = '/api/sessions';
+            if (bookmarkedOnly === true) {
+                url += '?bookmarked=true';
+            } else if (bookmarkedOnly === false) {
+                url += '?bookmarked=false';
+            }
+
+            const response = await fetch(url);
             const result = await response.json();
 
             if (response.ok) {
                 this.displaySelectableSessions(result.sessions);
+                this.updateBookmarkCount(result.sessions);
             } else {
                 throw new Error(result.error || 'Failed to load sessions');
             }
@@ -1700,6 +1759,249 @@ class TranscriptRecorder {
         } finally {
             // Re-enable clicking
             starElement.style.pointerEvents = 'auto';
+        }
+    }
+
+    // Bookmark Filtering Methods
+    async onBookmarkFilterChange() {
+        // Save filter state to localStorage
+        if (this.showBookmarkedOnlyCheckbox) {
+            localStorage.setItem('bookmarkFilter', this.showBookmarkedOnlyCheckbox.checked);
+        }
+
+        // Reload sessions with new filter
+        await this.loadSessionsTable();
+    }
+
+    updateBookmarkCount(sessions) {
+        if (!this.bookmarkCountSpan) return;
+
+        const bookmarkedCount = sessions.filter(session => session.bookmarked).length;
+        const totalCount = sessions.length;
+
+        if (this.showBookmarkedOnlyCheckbox && this.showBookmarkedOnlyCheckbox.checked) {
+            this.bookmarkCountSpan.textContent = `(${bookmarkedCount} bookmarked sessions)`;
+        } else {
+            this.bookmarkCountSpan.textContent = `(${bookmarkedCount} of ${totalCount} bookmarked)`;
+        }
+    }
+
+    async bookmarkAllVisible() {
+        try {
+            // Get all currently visible sessions
+            const sessionRows = this.tableContent.querySelectorAll('tr.selectable');
+            const sessionIds = Array.from(sessionRows).map(row => row.dataset.sessionId);
+
+            if (sessionIds.length === 0) {
+                this.showNotification('info', 'No sessions to bookmark');
+                return;
+            }
+
+            // Show confirmation dialog
+            const confirmed = confirm(`Bookmark all ${sessionIds.length} visible sessions?`);
+            if (!confirmed) return;
+
+            // Disable button during operation
+            this.bookmarkAllVisibleBtn.disabled = true;
+            this.bookmarkAllVisibleBtn.textContent = '⏳ Bookmarking...';
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            // Bookmark each session
+            for (const sessionId of sessionIds) {
+                try {
+                    const response = await fetch(`/api/sessions/${sessionId}/bookmark`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const result = await response.json();
+                    if (response.ok && result.bookmarked) {
+                        successCount++;
+                    } else if (response.ok && !result.bookmarked) {
+                        // Session was already bookmarked, toggle it back
+                        await fetch(`/api/sessions/${sessionId}/bookmark`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    console.error(`Error bookmarking session ${sessionId}:`, error);
+                    errorCount++;
+                }
+            }
+
+            // Show results
+            if (errorCount === 0) {
+                this.showNotification('success', `Successfully bookmarked ${successCount} sessions`);
+            } else {
+                this.showNotification('warning', `Bookmarked ${successCount} sessions, ${errorCount} failed`);
+            }
+
+            // Reload sessions to reflect changes
+            await this.loadSessionsTable();
+
+        } catch (error) {
+            console.error('Error in bulk bookmark operation:', error);
+            this.showErrorMessage('Failed to bookmark sessions');
+        } finally {
+            // Re-enable button
+            this.bookmarkAllVisibleBtn.disabled = false;
+            this.bookmarkAllVisibleBtn.textContent = '🔖 Bookmark All Visible';
+        }
+    }
+
+    async clearAllBookmarks() {
+        try {
+            // Show confirmation dialog
+            const confirmed = confirm('Remove ALL bookmarks? This action cannot be undone.');
+            if (!confirmed) return;
+
+            // Disable button during operation
+            this.clearAllBookmarksBtn.disabled = true;
+            this.clearAllBookmarksBtn.textContent = '⏳ Clearing...';
+
+            // Get all bookmarked sessions
+            const response = await fetch('/api/sessions?bookmarked=true');
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to fetch bookmarked sessions');
+            }
+
+            const bookmarkedSessions = result.sessions;
+            if (bookmarkedSessions.length === 0) {
+                this.showNotification('info', 'No bookmarked sessions to clear');
+                return;
+            }
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            // Remove bookmark from each session
+            for (const session of bookmarkedSessions) {
+                try {
+                    const toggleResponse = await fetch(`/api/sessions/${session.session_id}/bookmark`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const toggleResult = await toggleResponse.json();
+                    if (toggleResponse.ok && !toggleResult.bookmarked) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    console.error(`Error clearing bookmark for session ${session.session_id}:`, error);
+                    errorCount++;
+                }
+            }
+
+            // Show results
+            if (errorCount === 0) {
+                this.showNotification('success', `Successfully cleared ${successCount} bookmarks`);
+            } else {
+                this.showNotification('warning', `Cleared ${successCount} bookmarks, ${errorCount} failed`);
+            }
+
+            // Reload sessions to reflect changes
+            await this.loadSessionsTable();
+
+        } catch (error) {
+            console.error('Error in clear all bookmarks operation:', error);
+            this.showErrorMessage('Failed to clear bookmarks');
+        } finally {
+            // Re-enable button
+            this.clearAllBookmarksBtn.disabled = false;
+            this.clearAllBookmarksBtn.textContent = '🗑️ Clear All Bookmarks';
+        }
+    }
+
+    // Current Session Bookmark Methods
+    async updateCurrentSessionBookmarkState() {
+        if (!this.sessionId || !this.currentSessionBookmarkStar) return;
+
+        try {
+            // Check if current session is bookmarked
+            const response = await fetch('/api/sessions');
+            const result = await response.json();
+
+            if (response.ok) {
+                const currentSession = result.sessions.find(session => session.session_id === this.sessionId);
+                if (currentSession) {
+                    this.setCurrentSessionBookmarkState(currentSession.bookmarked);
+                } else {
+                    // Session not yet in database (new session)
+                    this.setCurrentSessionBookmarkState(false);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking current session bookmark state:', error);
+            this.setCurrentSessionBookmarkState(false);
+        }
+    }
+
+    setCurrentSessionBookmarkState(isBookmarked) {
+        if (!this.currentSessionBookmarkStar) return;
+
+        if (isBookmarked) {
+            this.currentSessionBookmarkStar.textContent = '★';
+            this.currentSessionBookmarkStar.classList.add('bookmarked');
+            this.currentSessionBookmarkStar.title = 'Remove bookmark from this session';
+        } else {
+            this.currentSessionBookmarkStar.textContent = '☆';
+            this.currentSessionBookmarkStar.classList.remove('bookmarked');
+            this.currentSessionBookmarkStar.title = 'Bookmark this session';
+        }
+    }
+
+    async toggleCurrentSessionBookmark() {
+        if (!this.sessionId) {
+            this.showErrorMessage('No active session to bookmark');
+            return;
+        }
+
+        try {
+            // Show loading state
+            const originalText = this.currentSessionBookmarkStar.textContent;
+            this.currentSessionBookmarkStar.textContent = '⏳';
+            this.currentSessionBookmarkStar.style.pointerEvents = 'none';
+
+            // Make API call to toggle bookmark
+            const response = await fetch(`/api/sessions/${this.sessionId}/bookmark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Update star appearance
+                this.setCurrentSessionBookmarkState(result.bookmarked);
+
+                // Show success notification
+                this.showNotification('success', result.message);
+                console.log(`🔖 ${result.message}: ${this.sessionId}`);
+            } else {
+                throw new Error(result.error || 'Failed to toggle bookmark');
+            }
+
+        } catch (error) {
+            console.error('Error toggling current session bookmark:', error);
+            this.showErrorMessage('Failed to toggle session bookmark');
+
+            // Restore original state on error
+            this.currentSessionBookmarkStar.textContent = originalText;
+        } finally {
+            // Re-enable clicking
+            this.currentSessionBookmarkStar.style.pointerEvents = 'auto';
         }
     }
 
