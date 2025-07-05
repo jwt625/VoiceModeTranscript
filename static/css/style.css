@@ -1059,6 +1059,54 @@ header h1 {
     text-overflow: ellipsis;
 }
 
+/* Bookmark Styles */
+.bookmark-cell {
+    text-align: center;
+    width: 60px;
+    padding: 8px 4px !important;
+}
+
+.bookmark-star {
+    font-size: 18px;
+    cursor: pointer;
+    display: inline-block;
+    transition: all 0.2s ease;
+    user-select: none;
+    color: #8e8e93;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.bookmark-star:hover {
+    color: #ffd700;
+    background: rgba(255, 215, 0, 0.1);
+    transform: scale(1.1);
+}
+
+.bookmark-star.bookmarked {
+    color: #ffd700;
+}
+
+.bookmark-star.bookmarked:hover {
+    color: #ffed4e;
+    background: rgba(255, 215, 0, 0.15);
+}
+
+/* Loading state for bookmark star */
+.bookmark-star[style*="pointer-events: none"] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Ensure bookmark column doesn't get selected styling */
+.data-table tr.selected .bookmark-star {
+    color: #ffd700;
+}
+
+.data-table tr.selected .bookmark-star:not(.bookmarked) {
+    color: #ffffff;
+}
+
 /* Session Browser Controls */
 .session-browser-controls {
     background: #1a1a1a;

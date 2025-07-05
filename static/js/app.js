@@ -1581,6 +1581,7 @@ class TranscriptRecorder {
             <table class="data-table">
                 <thead>
                     <tr>
+                        <th>Bookmark</th>
                         <th>Session ID</th>
                         <th>Raw Transcripts</th>
                         <th>Processed Transcripts</th>
@@ -1591,6 +1592,13 @@ class TranscriptRecorder {
                 <tbody>
                     ${sessions.map(session => `
                         <tr class="selectable" data-session-id="${session.session_id}">
+                            <td class="bookmark-cell">
+                                <span class="bookmark-star ${session.bookmarked ? 'bookmarked' : ''}"
+                                      data-session-id="${session.session_id}"
+                                      title="${session.bookmarked ? 'Remove bookmark' : 'Add bookmark'}">
+                                    ${session.bookmarked ? '★' : '☆'}
+                                </span>
+                            </td>
                             <td class="text-truncate">${session.display_name}</td>
                             <td>${session.raw_transcript_count}</td>
                             <td>${session.processed_transcript_count}</td>
@@ -1611,7 +1619,21 @@ class TranscriptRecorder {
     addSessionRowListeners() {
         const sessionRows = this.tableContent.querySelectorAll('tr.selectable');
         sessionRows.forEach(row => {
-            row.addEventListener('click', () => this.selectSession(row));
+            row.addEventListener('click', (e) => {
+                // Don't select row if clicking on bookmark star
+                if (!e.target.classList.contains('bookmark-star')) {
+                    this.selectSession(row);
+                }
+            });
+        });
+
+        // Add bookmark click listeners
+        const bookmarkStars = this.tableContent.querySelectorAll('.bookmark-star');
+        bookmarkStars.forEach(star => {
+            star.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent row selection
+                this.toggleBookmark(star.dataset.sessionId, star);
+            });
         });
     }
 
@@ -1628,9 +1650,57 @@ class TranscriptRecorder {
         // Update UI
         this.loadSessionBtn.disabled = false;
         this.exportSessionBtn.disabled = false;
-        this.selectedSessionInfo.textContent = `Selected: ${row.cells[0].textContent}`;
+        this.selectedSessionInfo.textContent = `Selected: ${row.cells[1].textContent}`; // Session ID is now in column 1
 
         console.log(`📖 Selected session: ${this.selectedSessionId}`);
+    }
+
+    async toggleBookmark(sessionId, starElement) {
+        try {
+            // Show loading state
+            const originalText = starElement.textContent;
+            starElement.textContent = '⏳';
+            starElement.style.pointerEvents = 'none';
+
+            // Make API call to toggle bookmark
+            const response = await fetch(`/api/sessions/${sessionId}/bookmark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Update star appearance
+                if (result.bookmarked) {
+                    starElement.textContent = '★';
+                    starElement.classList.add('bookmarked');
+                    starElement.title = 'Remove bookmark';
+                } else {
+                    starElement.textContent = '☆';
+                    starElement.classList.remove('bookmarked');
+                    starElement.title = 'Add bookmark';
+                }
+
+                // Show success notification
+                this.showNotification('success', result.message);
+                console.log(`🔖 ${result.message}: ${sessionId}`);
+            } else {
+                throw new Error(result.error || 'Failed to toggle bookmark');
+            }
+
+        } catch (error) {
+            console.error('Error toggling bookmark:', error);
+            this.showErrorMessage('Failed to toggle bookmark');
+
+            // Restore original state on error
+            starElement.textContent = originalText;
+        } finally {
+            // Re-enable clicking
+            starElement.style.pointerEvents = 'auto';
+        }
     }
 
     async loadSelectedSession() {
