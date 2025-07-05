@@ -183,7 +183,7 @@ class TranscriptRecorder {
         // Panel visibility controls
         this.showRawBtn.addEventListener('click', () => this.toggleRawPanelVisibility());
         this.showProcessedBtn.addEventListener('click', () => this.toggleProcessedPanelVisibility());
-        this.showBothBtn.addEventListener('click', () => this.showBothPanels());
+        this.showBothBtn.addEventListener('click', () => this.toggleBothPanels());
 
         // Processed transcript actions
         if (this.saveProcessedBtn) {
@@ -2937,23 +2937,29 @@ class TranscriptRecorder {
         this.updateGridLayout();
     }
 
-    showBothPanels() {
-        // Always show both panels (don't toggle)
+    toggleBothPanels() {
         const rawPanel = document.querySelector('.raw-panel');
         const processedPanel = document.querySelector('.processed-panel');
 
-        // Show raw panel if hidden
-        if (!this.rawPanelVisible) {
+        // If both panels are visible, hide both
+        if (this.rawPanelVisible && this.processedPanelVisible) {
+            // Hide both panels
+            rawPanel.classList.add('hidden');
+            processedPanel.classList.add('hidden');
+            this.rawPanelVisible = false;
+            this.processedPanelVisible = false;
+            this.toggleRawBtn.textContent = '👁️ Show';
+            this.toggleProcessedBtn.textContent = '👁️ Show';
+            console.log('👁️ Both panels hidden');
+        } else {
+            // Show both panels
             rawPanel.classList.remove('hidden');
-            this.rawPanelVisible = true;
-            this.toggleRawBtn.textContent = '👁️ Hide';
-        }
-
-        // Show processed panel if hidden
-        if (!this.processedPanelVisible) {
             processedPanel.classList.remove('hidden');
+            this.rawPanelVisible = true;
             this.processedPanelVisible = true;
+            this.toggleRawBtn.textContent = '👁️ Hide';
             this.toggleProcessedBtn.textContent = '👁️ Hide';
+            console.log('👁️ Both panels shown');
         }
 
         // Update visibility button states
@@ -2961,8 +2967,6 @@ class TranscriptRecorder {
 
         // Update grid layout
         this.updateGridLayout();
-
-        console.log('👁️ Both panels shown');
     }
 
     updateVisibilityButtonStates() {
@@ -2977,6 +2981,23 @@ class TranscriptRecorder {
             this.showProcessedBtn.classList.add('active');
         } else {
             this.showProcessedBtn.classList.remove('active');
+        }
+
+        // Update "Both" button text and state
+        this.updateBothButtonState();
+    }
+
+    updateBothButtonState() {
+        if (this.rawPanelVisible && this.processedPanelVisible) {
+            // Both panels visible - button should offer to hide both
+            this.showBothBtn.textContent = '🙈 Hide Both';
+            this.showBothBtn.title = 'Hide Both Panels';
+            this.showBothBtn.classList.add('active');
+        } else {
+            // At least one panel hidden - button should offer to show both
+            this.showBothBtn.textContent = '👁️ Show Both';
+            this.showBothBtn.title = 'Show Both Panels';
+            this.showBothBtn.classList.remove('active');
         }
     }
 

@@ -517,6 +517,17 @@ header h1 {
     border-color: #30b350;
 }
 
+.btn-visibility-both.active {
+    background: #ff6b35;
+    border-color: #ff6b35;
+    color: white;
+}
+
+.btn-visibility-both.active:hover {
+    background: #e55a2b;
+    border-color: #e55a2b;
+}
+
 /* Dual Transcript Container */
 .dual-transcript-container {
     display: grid;
