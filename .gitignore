@@ -245,8 +245,8 @@ audio_samples/
 *.sqlite3
 transcripts.db
 
-# Model files and caches
-models/
+# Model files and caches (whisper models, not source code)
+whisper.cpp/models/
 *.pt
 *.pth
 *.onnx
