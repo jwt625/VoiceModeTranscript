@@ -17,6 +17,9 @@
                 </div>
                 <div class="session-info" id="session-info" style="display: none;">
                     <span>Session: <span id="session-id"></span></span>
+                    <span class="current-session-bookmark" id="current-session-bookmark" style="display: none;">
+                        <span class="bookmark-star" id="current-session-bookmark-star" title="Bookmark this session">☆</span>
+                    </span>
                     <span>Duration: <span id="duration">00:00</span></span>
                 </div>
             </div>
@@ -181,6 +184,21 @@
 
                         <!-- Session Browser Controls -->
                         <div class="session-browser-controls" id="session-browser-controls" style="display: none;">
+                            <!-- Bookmark Filtering Controls -->
+                            <div class="bookmark-filter-controls">
+                                <div class="filter-options">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="show-bookmarked-only" class="bookmark-filter-checkbox">
+                                        <span class="checkbox-text">⭐ Show Bookmarked Only</span>
+                                    </label>
+                                    <span id="bookmark-count" class="bookmark-count"></span>
+                                </div>
+                                <div class="bulk-actions">
+                                    <button id="bookmark-all-visible-btn" class="btn btn-secondary" title="Bookmark all currently visible sessions">🔖 Bookmark All Visible</button>
+                                    <button id="clear-all-bookmarks-btn" class="btn btn-warning" title="Remove all bookmarks">🗑️ Clear All Bookmarks</button>
+                                </div>
+                            </div>
+
                             <div class="session-selection">
                                 <button id="load-session-btn" class="btn btn-primary" disabled>Load Selected Session into Main Panels</button>
                                 <button id="export-session-btn" class="btn btn-export" disabled>📤 Export Selected Session</button>

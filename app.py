@@ -788,6 +788,8 @@ def stop_recording():
 def get_sessions():
     """Get list of recording sessions with transcript counts"""
     try:
+        # Get query parameters
+        bookmarked_filter = request.args.get("bookmarked")
         conn = sqlite3.connect("transcripts.db")
         cursor = conn.cursor()
 
@@ -810,7 +812,7 @@ def get_sessions():
         # Get session records from sessions table (preferred source)
         cursor.execute(
             """
-            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence
+            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked
             FROM sessions
             ORDER BY start_time DESC
         """
@@ -845,6 +847,7 @@ def get_sessions():
                 total_segments = session_data[4] or 0
                 total_words = session_data[5] or 0
                 avg_confidence = session_data[6] or 0.0
+                bookmarked = bool(session_data[7]) if len(session_data) > 7 else False
             else:
                 start_time = transcript_data[2] if transcript_data else None
                 end_time = transcript_data[3] if transcript_data else None
@@ -852,6 +855,7 @@ def get_sessions():
                 total_segments = 0
                 total_words = 0
                 avg_confidence = 0.0
+                bookmarked = False
 
             sessions.append(
                 {
@@ -867,9 +871,16 @@ def get_sessions():
                     "total_segments": total_segments,
                     "total_words": total_words,
                     "avg_confidence": avg_confidence,
+                    "bookmarked": bookmarked,
                     "display_name": f"Session {session_id.replace('session_', '')}",
                 }
             )
+
+        # Apply bookmark filtering if requested
+        if bookmarked_filter == "true":
+            sessions = [s for s in sessions if s["bookmarked"]]
+        elif bookmarked_filter == "false":
+            sessions = [s for s in sessions if not s["bookmarked"]]
 
         # Sort by start time (most recent first)
         sessions.sort(key=lambda x: x["start_time"] or "", reverse=True)
@@ -1218,6 +1229,70 @@ def calculate_session_metrics_endpoint(session_id):
         metrics = get_session_quality_metrics(session_id)
 
         return jsonify({"success": True, "session_id": session_id, "metrics": metrics})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sessions/<session_id>/bookmark", methods=["POST"])
+def toggle_session_bookmark(session_id):
+    """Toggle bookmark status for a session"""
+    try:
+        conn = sqlite3.connect("transcripts.db")
+        cursor = conn.cursor()
+
+        # Check if session exists in sessions table
+        cursor.execute(
+            "SELECT id, bookmarked FROM sessions WHERE id = ?", (session_id,)
+        )
+        session = cursor.fetchone()
+
+        if not session:
+            # Check if session exists in raw_transcripts (legacy sessions)
+            cursor.execute(
+                "SELECT session_id, MIN(timestamp) FROM raw_transcripts WHERE session_id = ?",
+                (session_id,),
+            )
+            raw_session = cursor.fetchone()
+
+            if not raw_session:
+                conn.close()
+                return jsonify({"error": "Session not found"}), 404
+
+            # Create session record for legacy session
+            start_time = raw_session[1]
+            cursor.execute(
+                "INSERT INTO sessions (id, start_time, bookmarked) VALUES (?, ?, ?)",
+                (
+                    session_id,
+                    start_time,
+                    True,
+                ),  # Default to bookmarked since user is trying to bookmark it
+            )
+            new_bookmarked = True
+            message = "Session bookmarked (legacy session migrated)"
+        else:
+            # Toggle bookmark status for existing session
+            current_bookmarked = bool(session[1])
+            new_bookmarked = not current_bookmarked
+
+            cursor.execute(
+                "UPDATE sessions SET bookmarked = ? WHERE id = ?",
+                (new_bookmarked, session_id),
+            )
+            message = f"Session {'bookmarked' if new_bookmarked else 'unbookmarked'}"
+
+        conn.commit()
+        conn.close()
+
+        return jsonify(
+            {
+                "success": True,
+                "session_id": session_id,
+                "bookmarked": new_bookmarked,
+                "message": message,
+            }
+        )
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1743,7 +1818,8 @@ def init_database():
             total_words INTEGER DEFAULT 0,
             avg_confidence REAL DEFAULT 0.0,
             confidence_count INTEGER DEFAULT 0,
-            confidence_sum REAL DEFAULT 0.0
+            confidence_sum REAL DEFAULT 0.0,
+            bookmarked BOOLEAN DEFAULT 0
         )
     """
     )
@@ -1825,6 +1901,9 @@ def init_database():
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_raw_transcripts_audio_source ON raw_transcripts(audio_source)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_bookmarked ON sessions(bookmarked)"
     )
 
     # Add quality metrics columns to existing sessions table if they don't exist
@@ -2115,10 +2194,10 @@ def get_session_metadata(session_id):
         conn = sqlite3.connect("transcripts.db")
         cursor = conn.cursor()
 
-        # Get session info from sessions table
+        # Get session info from sessions table including bookmark status
         cursor.execute(
             """
-            SELECT start_time, end_time, duration, total_segments, total_words, avg_confidence
+            SELECT start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked
             FROM sessions
             WHERE id = ?
         """,
@@ -2172,8 +2251,12 @@ def get_session_metadata(session_id):
                     "total_segments": session_row[3],
                     "total_words": session_row[4],
                     "avg_confidence": session_row[5],
+                    "bookmarked": bool(session_row[6]),
                 }
             )
+        else:
+            # If no session row found, default bookmark status to false
+            metadata["bookmarked"] = False
 
         return metadata
 
@@ -2198,6 +2281,7 @@ def generate_txt_export(session_id, transcripts, metadata):
     # Header
     lines.append(f"Session Export: {session_id}")
     lines.append(f"Export Date: {metadata.get('export_timestamp', 'Unknown')}")
+    lines.append(f"Bookmarked: {'Yes' if metadata.get('bookmarked', False) else 'No'}")
     lines.append(f"Raw Transcripts: {metadata.get('raw_transcript_count', 0)}")
     lines.append(
         f"Processed Transcripts: {metadata.get('processed_transcript_count', 0)}"
