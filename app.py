@@ -46,6 +46,9 @@ mic_whisper_processor = None
 system_whisper_processor = None
 llm_processor = None
 
+# Track sessions waiting for summary generation after stop recording
+sessions_waiting_for_summary = set()
+
 
 def on_whisper_transcript(event_data):
     """Callback for whisper streaming processor events"""
@@ -112,6 +115,14 @@ def on_llm_result(event_data):
                 },
                 block=False,
             )
+
+            # Check if this session is waiting for summary generation
+            session_id = event_data.get("session_id")
+            if session_id and session_id in sessions_waiting_for_summary:
+                print(
+                    f"📝 LLM processing complete for session {session_id}, checking if ready for summary..."
+                )
+                check_and_generate_summary_if_ready(session_id)
 
         elif event_data["type"] == "llm_processing_error":
             # Send error via SSE
@@ -778,12 +789,14 @@ def stop_recording():
         # Calculate and save session quality metrics
         calculate_and_save_session_metrics(session_id)
 
-        # Generate session summary after all processing is complete
-        print("📝 Generating session summary...")
-        try:
-            generate_session_summary_async(session_id)
-        except Exception as e:
-            print(f"⚠️ Error generating session summary: {e}")
+        # Mark session as waiting for summary generation after LLM processing completes
+        print(
+            "📝 Marking session for summary generation after LLM processing completes..."
+        )
+        sessions_waiting_for_summary.add(session_id)
+
+        # Check if summary can be generated immediately (if no LLM processing is pending)
+        check_and_generate_summary_if_ready(session_id)
 
         return jsonify(
             {
@@ -2613,6 +2626,43 @@ def generate_csv_export(session_id, transcripts, metadata):
             )
 
     return output.getvalue()
+
+
+def check_and_generate_summary_if_ready(session_id):
+    """Check if a session is ready for summary generation and generate if ready."""
+    global llm_processor, sessions_waiting_for_summary
+
+    try:
+        if session_id not in sessions_waiting_for_summary:
+            return  # Session not waiting for summary
+
+        # Check if there are any pending LLM processing jobs for this session
+        if llm_processor:
+            queue_status = llm_processor.get_queue_status()
+            pending_jobs = [
+                job
+                for job in queue_status
+                if job.get("session_id") == session_id
+                and job.get("status") in ["queued", "processing"]
+            ]
+
+            if pending_jobs:
+                print(
+                    f"📝 Session {session_id} still has {len(pending_jobs)} pending LLM jobs, waiting..."
+                )
+                return  # Still processing, wait for completion
+
+        # No pending jobs, ready to generate summary
+        print(f"📝 Session {session_id} ready for summary generation!")
+        sessions_waiting_for_summary.remove(session_id)
+
+        # Generate summary asynchronously
+        generate_session_summary_async(session_id)
+
+    except Exception as e:
+        print(f"❌ Error checking summary readiness for session {session_id}: {e}")
+        # Remove from waiting list to prevent infinite waiting
+        sessions_waiting_for_summary.discard(session_id)
 
 
 def process_remaining_transcripts_before_stop(session_id):
