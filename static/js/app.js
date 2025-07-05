@@ -237,14 +237,28 @@ class TranscriptRecorder {
     }
 
     setupKeyboardListeners() {
-        // Listen for Enter key to trigger LLM processing
+        // Listen for keyboard shortcuts
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
-                // Only trigger if not in an input field
-                if (document.activeElement.tagName !== 'INPUT' &&
-                    document.activeElement.tagName !== 'TEXTAREA') {
+            // Only trigger if not in an input field
+            if (document.activeElement.tagName !== 'INPUT' &&
+                document.activeElement.tagName !== 'TEXTAREA' &&
+                document.activeElement.tagName !== 'SELECT') {
+
+                // Enter key to trigger LLM processing
+                if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
                     event.preventDefault();
                     this.processWithLLM();
+                }
+
+                // Ctrl+B to bookmark current session
+                if (event.key === 'b' && event.ctrlKey && !event.altKey && !event.shiftKey) {
+                    event.preventDefault();
+                    if (this.sessionId && this.isRecording) {
+                        this.toggleCurrentSessionBookmark();
+                        this.showNotification('info', 'Keyboard shortcut: Ctrl+B to bookmark current session');
+                    } else {
+                        this.showNotification('warning', 'No active session to bookmark (Ctrl+B)');
+                    }
                 }
             }
         });
@@ -1611,9 +1625,8 @@ class TranscriptRecorder {
             let url = '/api/sessions';
             if (bookmarkedOnly === true) {
                 url += '?bookmarked=true';
-            } else if (bookmarkedOnly === false) {
-                url += '?bookmarked=false';
             }
+            // When bookmarkedOnly is false or null, don't add any filter to show ALL sessions
 
             const response = await fetch(url);
             const result = await response.json();
