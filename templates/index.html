@@ -183,10 +183,36 @@
                         <div class="session-browser-controls" id="session-browser-controls" style="display: none;">
                             <div class="session-selection">
                                 <button id="load-session-btn" class="btn btn-primary" disabled>Load Selected Session into Main Panels</button>
+                                <button id="export-session-btn" class="btn btn-export" disabled>📤 Export Selected Session</button>
                                 <span id="selected-session-info" class="selected-session-info">No session selected</span>
                             </div>
+
+                            <!-- Export Options -->
+                            <div class="export-options" id="export-options" style="display: none;">
+                                <div class="export-controls">
+                                    <div class="export-format">
+                                        <label for="export-format-select">Format:</label>
+                                        <select id="export-format-select" class="form-select">
+                                            <option value="json">JSON</option>
+                                            <option value="txt">Text</option>
+                                            <option value="csv">CSV</option>
+                                        </select>
+                                    </div>
+                                    <div class="export-content">
+                                        <label for="export-content-select">Content:</label>
+                                        <select id="export-content-select" class="form-select">
+                                            <option value="both">Both Raw & Processed</option>
+                                            <option value="raw">Raw Transcripts Only</option>
+                                            <option value="processed">Processed Transcripts Only</option>
+                                        </select>
+                                    </div>
+                                    <button id="download-export-btn" class="btn btn-download">⬇️ Download</button>
+                                    <button id="cancel-export-btn" class="btn btn-cancel">Cancel</button>
+                                </div>
+                            </div>
+
                             <div class="session-info">
-                                <p>📖 Click on a session in the list below to select it, then click "Load Selected Session" to view its transcripts in the main panels.</p>
+                                <p>📖 Click on a session in the list below to select it, then click "Load Selected Session" to view its transcripts or "Export Selected Session" to download them.</p>
                             </div>
                         </div>
 

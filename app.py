@@ -12,6 +12,8 @@ from datetime import datetime
 import threading
 import time
 import queue
+import csv
+import io
 
 # Import our custom modules
 from src.audio_capture import AudioCapture
@@ -968,6 +970,59 @@ def calculate_session_metrics_endpoint(session_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/sessions/<session_id>/export')
+def export_session(session_id):
+    """Export session transcripts in various formats"""
+    try:
+        # Get query parameters
+        export_format = request.args.get('format', 'json').lower()
+        content_type = request.args.get('content', 'both').lower()
+
+        # Validate parameters
+        if export_format not in ['json', 'txt', 'csv']:
+            return jsonify({'error': 'Invalid format. Must be json, txt, or csv'}), 400
+
+        if content_type not in ['raw', 'processed', 'both']:
+            return jsonify({'error': 'Invalid content type. Must be raw, processed, or both'}), 400
+
+        # Get session transcripts
+        transcripts = get_session_transcripts(session_id, content_type)
+
+        if not transcripts:
+            return jsonify({'error': 'No transcripts found for this session'}), 404
+
+        # Get session metadata
+        session_metadata = get_session_metadata(session_id)
+
+        # Generate export data based on format
+        if export_format == 'json':
+            export_data = generate_json_export(session_id, transcripts, session_metadata)
+            response = Response(
+                json.dumps(export_data, indent=2),
+                mimetype='application/json',
+                headers={'Content-Disposition': f'attachment; filename=session_{session_id}_{content_type}.json'}
+            )
+        elif export_format == 'txt':
+            export_data = generate_txt_export(session_id, transcripts, session_metadata)
+            response = Response(
+                export_data,
+                mimetype='text/plain',
+                headers={'Content-Disposition': f'attachment; filename=session_{session_id}_{content_type}.txt'}
+            )
+        elif export_format == 'csv':
+            export_data = generate_csv_export(session_id, transcripts, session_metadata)
+            response = Response(
+                export_data,
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename=session_{session_id}_{content_type}.csv'}
+            )
+
+        return response
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/database/stats')
 def get_database_stats():
     """Get database statistics for inspection"""
@@ -1648,6 +1703,155 @@ def get_session_quality_metrics(session_id):
     except Exception as e:
         print(f"❌ Error getting session metrics: {e}")
         return None
+
+
+def get_session_metadata(session_id):
+    """Get session metadata for export"""
+    try:
+        conn = sqlite3.connect('transcripts.db')
+        cursor = conn.cursor()
+
+        # Get session info from sessions table
+        cursor.execute('''
+            SELECT start_time, end_time, duration, total_segments, total_words, avg_confidence
+            FROM sessions
+            WHERE id = ?
+        ''', (session_id,))
+
+        session_row = cursor.fetchone()
+
+        # Get additional info from raw_transcripts
+        cursor.execute('''
+            SELECT MIN(timestamp) as first_transcript, MAX(timestamp) as last_transcript,
+                   COUNT(*) as raw_count, COUNT(DISTINCT audio_source) as audio_sources
+            FROM raw_transcripts
+            WHERE session_id = ?
+        ''', (session_id,))
+
+        transcript_row = cursor.fetchone()
+
+        # Get processed transcript count
+        cursor.execute('''
+            SELECT COUNT(*) FROM processed_transcripts WHERE session_id = ?
+        ''', (session_id,))
+
+        processed_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        metadata = {
+            'session_id': session_id,
+            'export_timestamp': datetime.now().isoformat(),
+            'raw_transcript_count': transcript_row[2] if transcript_row else 0,
+            'processed_transcript_count': processed_count,
+            'audio_sources': transcript_row[3] if transcript_row else 0,
+            'first_transcript': transcript_row[0] if transcript_row else None,
+            'last_transcript': transcript_row[1] if transcript_row else None
+        }
+
+        # Add session table data if available
+        if session_row:
+            metadata.update({
+                'start_time': session_row[0],
+                'end_time': session_row[1],
+                'duration': session_row[2],
+                'total_segments': session_row[3],
+                'total_words': session_row[4],
+                'avg_confidence': session_row[5]
+            })
+
+        return metadata
+
+    except Exception as e:
+        print(f"Error getting session metadata: {e}")
+        return {'session_id': session_id, 'export_timestamp': datetime.now().isoformat()}
+
+
+def generate_json_export(session_id, transcripts, metadata):
+    """Generate JSON export format"""
+    export_data = {
+        'metadata': metadata,
+        'transcripts': transcripts
+    }
+    return export_data
+
+
+def generate_txt_export(session_id, transcripts, metadata):
+    """Generate plain text export format"""
+    lines = []
+
+    # Header
+    lines.append(f"Session Export: {session_id}")
+    lines.append(f"Export Date: {metadata.get('export_timestamp', 'Unknown')}")
+    lines.append(f"Raw Transcripts: {metadata.get('raw_transcript_count', 0)}")
+    lines.append(f"Processed Transcripts: {metadata.get('processed_transcript_count', 0)}")
+    lines.append("=" * 80)
+    lines.append("")
+
+    # Raw transcripts
+    if 'raw' in transcripts and transcripts['raw']:
+        lines.append("RAW TRANSCRIPTS")
+        lines.append("-" * 40)
+        for transcript in transcripts['raw']:
+            timestamp = transcript.get('timestamp', 'Unknown')
+            audio_source = transcript.get('audio_source', 'unknown')
+            confidence = transcript.get('confidence')
+            conf_str = f" (confidence: {confidence:.2f})" if confidence else ""
+            lines.append(f"[{timestamp}] [{audio_source}]{conf_str}")
+            lines.append(transcript.get('text', ''))
+            lines.append("")
+
+    # Processed transcripts
+    if 'processed' in transcripts and transcripts['processed']:
+        lines.append("PROCESSED TRANSCRIPTS")
+        lines.append("-" * 40)
+        for transcript in transcripts['processed']:
+            timestamp = transcript.get('timestamp', 'Unknown')
+            llm_model = transcript.get('llm_model', 'Unknown')
+            original_count = transcript.get('original_transcript_count', 0)
+            lines.append(f"[{timestamp}] [LLM: {llm_model}] (from {original_count} raw transcripts)")
+            lines.append(transcript.get('processed_text', ''))
+            lines.append("")
+
+    return '\n'.join(lines)
+
+
+def generate_csv_export(session_id, transcripts, metadata):
+    """Generate CSV export format"""
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['Type', 'Timestamp', 'Text', 'Audio_Source', 'Confidence', 'LLM_Model', 'Original_Count'])
+
+    # Write raw transcripts
+    if 'raw' in transcripts and transcripts['raw']:
+        for transcript in transcripts['raw']:
+            writer.writerow([
+                'raw',
+                transcript.get('timestamp', ''),
+                transcript.get('text', ''),
+                transcript.get('audio_source', ''),
+                transcript.get('confidence', ''),
+                '',  # No LLM model for raw
+                ''   # No original count for raw
+            ])
+
+    # Write processed transcripts
+    if 'processed' in transcripts and transcripts['processed']:
+        for transcript in transcripts['processed']:
+            writer.writerow([
+                'processed',
+                transcript.get('timestamp', ''),
+                transcript.get('processed_text', ''),
+                '',  # No audio source for processed
+                '',  # No confidence for processed
+                transcript.get('llm_model', ''),
+                transcript.get('original_transcript_count', '')
+            ])
+
+    return output.getvalue()
 
 
 if __name__ == '__main__':

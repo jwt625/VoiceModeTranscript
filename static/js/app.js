@@ -114,6 +114,14 @@ class TranscriptRecorder {
         this.loadSessionBtn = document.getElementById('load-session-btn');
         this.selectedSessionInfo = document.getElementById('selected-session-info');
 
+        // Export elements
+        this.exportSessionBtn = document.getElementById('export-session-btn');
+        this.exportOptions = document.getElementById('export-options');
+        this.exportFormatSelect = document.getElementById('export-format-select');
+        this.exportContentSelect = document.getElementById('export-content-select');
+        this.downloadExportBtn = document.getElementById('download-export-btn');
+        this.cancelExportBtn = document.getElementById('cancel-export-btn');
+
         // Quality monitor (updated)
         this.whisperStatus = document.getElementById('whisper-status');
         this.llmProcessingStatus = document.getElementById('llm-processing-status');
@@ -179,6 +187,17 @@ class TranscriptRecorder {
         // Session browser controls
         if (this.loadSessionBtn) {
             this.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
+        }
+
+        // Export controls
+        if (this.exportSessionBtn) {
+            this.exportSessionBtn.addEventListener('click', () => this.showExportOptions());
+        }
+        if (this.downloadExportBtn) {
+            this.downloadExportBtn.addEventListener('click', () => this.downloadSessionExport());
+        }
+        if (this.cancelExportBtn) {
+            this.cancelExportBtn.addEventListener('click', () => this.hideExportOptions());
         }
 
         // Close modal when clicking outside
@@ -1526,7 +1545,11 @@ class TranscriptRecorder {
         // Reset selection state
         this.selectedSessionId = null;
         this.loadSessionBtn.disabled = true;
+        this.exportSessionBtn.disabled = true;
         this.selectedSessionInfo.textContent = 'No session selected';
+
+        // Hide export options if they were shown
+        this.hideExportOptions();
 
         // Load and display sessions as selectable table
         await this.loadSessionsTable();
@@ -1604,6 +1627,7 @@ class TranscriptRecorder {
 
         // Update UI
         this.loadSessionBtn.disabled = false;
+        this.exportSessionBtn.disabled = false;
         this.selectedSessionInfo.textContent = `Selected: ${row.cells[0].textContent}`;
 
         console.log(`📖 Selected session: ${this.selectedSessionId}`);
@@ -1805,6 +1829,54 @@ class TranscriptRecorder {
 
     // Note: Session viewing now loads directly into main panels
     // The old modal-based session viewing methods have been removed
+
+    // Export Methods
+    showExportOptions() {
+        if (!this.selectedSessionId) {
+            this.showErrorMessage('No session selected');
+            return;
+        }
+
+        this.exportOptions.style.display = 'block';
+        console.log(`📤 Showing export options for session: ${this.selectedSessionId}`);
+    }
+
+    hideExportOptions() {
+        this.exportOptions.style.display = 'none';
+    }
+
+    async downloadSessionExport() {
+        if (!this.selectedSessionId) {
+            this.showErrorMessage('No session selected');
+            return;
+        }
+
+        try {
+            const format = this.exportFormatSelect.value;
+            const content = this.exportContentSelect.value;
+
+            console.log(`📤 Downloading export: ${this.selectedSessionId}, format: ${format}, content: ${content}`);
+
+            // Build the export URL
+            const exportUrl = `/api/sessions/${this.selectedSessionId}/export?format=${format}&content=${content}`;
+
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = exportUrl;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Hide export options and show success message
+            this.hideExportOptions();
+            this.showSuccessMessage(`Session exported as ${format.toUpperCase()}`);
+
+        } catch (error) {
+            console.error('Error downloading export:', error);
+            this.showErrorMessage('Failed to export session');
+        }
+    }
 
     updateTabStates(activeTab) {
         // Remove active class from all tabs

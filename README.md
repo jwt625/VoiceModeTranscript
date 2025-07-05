@@ -8,7 +8,9 @@ A real-time transcript recorder for ChatGPT voice conversations with dual audio 
 - **Dual audio capture** - microphone and system audio simultaneously
 - **Intelligent deduplication** using LLM processing to clean overlapping transcripts
 - **Dual-panel interface** - compare raw vs processed transcripts
-- **Database storage** with export functionality
+- **Database storage** with SQLite backend for persistent transcript storage
+- **Session export** - download transcripts in JSON, TXT, or CSV formats
+- **Session browser** - view and manage historical recording sessions
 - **Dark mode interface** with real-time status indicators
 
 ## Prerequisites
@@ -94,7 +96,91 @@ Open your browser to: **http://localhost:5001**
 ### Interface
 - **Left Panel**: Real-time whisper.cpp output with overlapping segments
 - **Right Panel**: Clean, deduplicated text from LLM processing
-- **Export**: Download processed transcripts as JSON
+- **Database Inspector**: Browse historical sessions and export transcripts
+- **Export Options**: Download transcripts in multiple formats (JSON, TXT, CSV)
+
+### Session Management & Export
+
+#### Database Inspector
+1. Click **🗄️ Database Inspector** button
+2. Browse tabs: **Raw Transcripts**, **Processed Transcripts**, **Recent Sessions**, **Session Browser**
+3. View database statistics and recent activity
+
+#### Session Export
+1. Go to **Session Browser** tab in Database Inspector
+2. Select a session from the list
+3. Click **📤 Export Selected Session**
+4. Choose export options:
+   - **Format**: JSON (structured), TXT (readable), CSV (tabular)
+   - **Content**: Raw only, Processed only, or Both
+5. Click **⬇️ Download** to save the file
+
+#### Export Formats
+- **JSON**: Complete structured data with metadata, timestamps, and all transcript details
+- **TXT**: Human-readable format with timestamps and source information
+- **CSV**: Spreadsheet-compatible format for data analysis
+
+#### API Endpoint
+```bash
+GET /api/sessions/<session_id>/export?format=<json|txt|csv>&content=<raw|processed|both>
+```
+
+**Example:**
+```bash
+curl "http://localhost:5001/api/sessions/session_20250704_233045/export?format=json&content=both" -o export.json
+```
+
+## Database Structure
+
+The app uses SQLite with three main tables:
+
+### Tables
+- **`sessions`** - Session metadata with quality metrics
+- **`raw_transcripts`** - Direct whisper.cpp output with timestamps and confidence scores
+- **`processed_transcripts`** - LLM-cleaned transcripts with original transcript references
+
+### Key Fields
+- **Raw transcripts**: `id`, `session_id`, `text`, `timestamp`, `sequence_number`, `confidence`, `audio_source`
+- **Processed transcripts**: `id`, `session_id`, `processed_text`, `original_transcript_ids`, `llm_model`, `processing_time`
+
+## API Endpoints
+
+### Session Management
+- `GET /api/sessions` - List all recording sessions
+- `GET /api/sessions/<session_id>/export` - Export session transcripts
+- `POST /api/sessions/<session_id>/calculate-metrics` - Calculate session quality metrics
+
+### Transcript Access
+- `GET /api/raw-transcripts/<session_id>` - Get raw transcripts for session (paginated)
+- `GET /api/processed-transcripts/<session_id>` - Get processed transcripts for session (paginated)
+
+### Database Inspector
+- `GET /api/database/stats` - Database statistics and recent sessions
+- `GET /api/database/raw-transcripts` - All raw transcripts (paginated)
+- `GET /api/database/processed-transcripts` - All processed transcripts (paginated)
+
+### Recording Control
+- `POST /api/start` - Start recording session
+- `POST /api/stop` - Stop recording session
+- `POST /api/process-llm` - Trigger LLM processing
+- `GET /api/status` - Get current recording status
+
+## Troubleshooting
+
+### Export Issues
+- **Export button disabled**: Make sure a session is selected in the Session Browser
+- **Empty export file**: Check if the session has transcripts in the database
+- **Download not starting**: Verify the Flask server is running and accessible
+
+### Common Issues
+- **Port 5001 in use**: Kill existing processes with `lsof -ti:5001 | xargs kill -9`
+- **No sessions visible**: Check if any recording sessions have been completed
+- **Database errors**: Ensure SQLite database file has proper permissions
+
+### File Locations
+- **Database**: `transcripts.db` in project root
+- **Exports**: Downloaded to browser's default download folder
+- **Logs**: Console output in terminal running the Flask app
 
 ## License
 
