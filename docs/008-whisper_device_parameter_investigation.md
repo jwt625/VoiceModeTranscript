@@ -1,7 +1,7 @@
 # Whisper.cpp Device Parameter Investigation
 
-**Date:** 2025-06-28  
-**Status:** Investigation in Progress  
+**Date:** 2025-06-28
+**Status:** Investigation in Progress
 **Issue:** Whisper.cpp appears to ignore `-c` device parameter and always captures from microphone
 
 ## Problem Description
@@ -127,7 +127,7 @@ Two BlackHole 2ch devices appear in system:
   -t 6 --step 0 --length 30000 -vth 0.6 \
   -c 2
 
-# System audio instance  
+# System audio instance
 ./whisper.cpp/build/bin/whisper-stream \
   -m ./whisper.cpp/models/ggml-base.en.bin \
   -t 6 --step 0 --length 30000 -vth 0.6 \
@@ -228,5 +228,5 @@ Currently using single audio source (microphone) with proper labeling infrastruc
 
 ---
 
-**Last Updated:** 2025-06-28  
+**Last Updated:** 2025-06-28
 **Next Review:** After device parameter testing is complete

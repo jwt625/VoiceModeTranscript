@@ -44,7 +44,7 @@ class TranscriptRecorder {
         // Load VAD settings
         this.loadVADSettings();
     }
-    
+
     initializeElements() {
         // Control buttons
         this.startBtn = document.getElementById('start-btn');
@@ -130,7 +130,7 @@ class TranscriptRecorder {
         this.processingDelaySpan = document.getElementById('processing-delay');
         this.lastSaveSpan = document.getElementById('last-save');
     }
-    
+
     setupEventListeners() {
         // Recording controls
         this.startBtn.addEventListener('click', () => this.startRecording());
@@ -223,7 +223,7 @@ class TranscriptRecorder {
             }
         });
     }
-    
+
     setupSSEConnection() {
         console.log('Setting up SSE connection...');
         this.eventSource = new EventSource('/stream');
@@ -296,7 +296,7 @@ class TranscriptRecorder {
             }
         };
     }
-    
+
     async startRecording() {
         try {
             // Clear any session viewing mode and transcripts for safety
@@ -389,7 +389,7 @@ class TranscriptRecorder {
             this.showErrorMessage(error.message);
         }
     }
-    
+
     async stopRecording() {
         try {
             this.updateStatus('ready', 'Stopping...');
@@ -432,7 +432,7 @@ class TranscriptRecorder {
             this.stopBtn.disabled = false;
         }
     }
-    
+
     clearTranscript() {
         // Finalize any current message
         if (this.currentMessage) {
@@ -478,7 +478,7 @@ class TranscriptRecorder {
         this.updateStats();
         this.updateQualityMetrics();
     }
-    
+
     addTranscriptEntry(data) {
         // Remove placeholder if it exists
         this.clearTranscriptPlaceholder();
@@ -681,18 +681,18 @@ class TranscriptRecorder {
             }
         }, this.combineTimeoutMs);
     }
-    
+
     updateStatus(type, text) {
         this.statusDot.className = `status-dot ${type}`;
         this.statusText.textContent = text;
     }
-    
+
     updateRecordingState(state) {
         if (state.is_recording) {
             this.isRecording = true;
             this.sessionId = state.session_id;
             this.startTime = state.start_time ? new Date(state.start_time) : null;
-            
+
             this.updateStatus('recording', 'Recording');
             this.startBtn.disabled = true;
             this.stopBtn.disabled = false;
@@ -702,7 +702,7 @@ class TranscriptRecorder {
             this.isRecording = false;
             this.sessionId = null;
             this.startTime = null;
-            
+
             this.updateStatus('ready', 'Ready');
             this.startBtn.disabled = false;
             this.stopBtn.disabled = true;
@@ -710,7 +710,7 @@ class TranscriptRecorder {
             this.stopDurationTimer();
         }
     }
-    
+
     updateAudioLevels(data) {
         console.log('🎚️ updateAudioLevels called with:', data);
 
@@ -725,28 +725,28 @@ class TranscriptRecorder {
             this.systemLevel.style.width = `${percentage}%`;
         }
     }
-    
+
     showSessionInfo() {
         this.sessionInfo.style.display = 'block';
         this.sessionIdSpan.textContent = this.sessionId || 'Unknown';
     }
-    
+
     hideSessionInfo() {
         this.sessionInfo.style.display = 'none';
     }
-    
+
     startDurationTimer() {
         this.durationTimer = setInterval(() => {
             if (this.startTime) {
                 const elapsed = Math.floor((new Date() - this.startTime) / 1000);
                 const minutes = Math.floor(elapsed / 60);
                 const seconds = elapsed % 60;
-                this.durationSpan.textContent = 
+                this.durationSpan.textContent =
                     `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             }
         }, 1000);
     }
-    
+
     stopDurationTimer() {
         if (this.durationTimer) {
             clearInterval(this.durationTimer);
@@ -754,7 +754,7 @@ class TranscriptRecorder {
         }
         this.durationSpan.textContent = '00:00';
     }
-    
+
     clearTranscriptPlaceholder() {
         // This method is legacy - we now have separate methods for each panel
         // Keep for compatibility but make it safe
@@ -762,7 +762,7 @@ class TranscriptRecorder {
         this.clearRawTranscriptPlaceholder();
         this.clearProcessedTranscriptPlaceholder();
     }
-    
+
     updateStats() {
         // Update stats if elements exist (legacy elements may not be present)
         if (this.segmentCountSpan) {
@@ -772,7 +772,7 @@ class TranscriptRecorder {
             this.wordCountSpan.textContent = this.wordCount;
         }
     }
-    
+
     updateQualityMetrics() {
         // Update quality metrics if elements exist (legacy elements may not be present)
         if (this.avgConfidenceSpan) {
@@ -790,13 +790,13 @@ class TranscriptRecorder {
             this.processingDelaySpan.textContent = '< 2s';
         }
     }
-    
+
     getConfidenceClass(confidence) {
         if (confidence >= 0.8) return 'confidence-high';
         if (confidence >= 0.6) return 'confidence-medium';
         return 'confidence-low';
     }
-    
+
     showErrorMessage(message) {
         // Create error notification
         const errorDiv = document.createElement('div');
@@ -807,11 +807,11 @@ class TranscriptRecorder {
                 <br><small>Check the browser console (F12) for more technical details.</small>
             </div>
         `;
-        
+
         // Insert at top of container
         const container = document.querySelector('.container');
         container.insertBefore(errorDiv, container.firstChild);
-        
+
         // Remove after 10 seconds
         setTimeout(() => {
             errorDiv.remove();

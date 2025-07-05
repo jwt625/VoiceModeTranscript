@@ -2,7 +2,7 @@
 
 ## 🎉 Major Milestone Achieved!
 
-We have successfully built a **working ChatGPT Voice Mode Transcript Recorder** with a beautiful web interface! 
+We have successfully built a **working ChatGPT Voice Mode Transcript Recorder** with a beautiful web interface!
 
 **🌐 Live Demo**: http://localhost:5001
 

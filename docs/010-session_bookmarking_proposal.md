@@ -8,7 +8,7 @@ This document outlines a comprehensive plan to implement session bookmarking fun
 
 ### Existing Infrastructure
 - **Sessions Table**: Robust metadata storage with quality metrics
-- **Session Browser**: UI for selecting and loading historical sessions  
+- **Session Browser**: UI for selecting and loading historical sessions
 - **Database Inspector**: Modal interface with multiple tabs
 - **Export System**: Download functionality for session transcripts
 
@@ -254,7 +254,7 @@ This document outlines a comprehensive plan to implement session bookmarking fun
 - Core UI integration and testing
 - Documentation and user guide updates
 
-### Stage 2: 2-3 weeks  
+### Stage 2: 2-3 weeks
 - Filtering and bulk operations
 - Current session bookmarking
 - Enhanced UX and accessibility improvements

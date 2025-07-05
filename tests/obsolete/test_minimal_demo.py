@@ -4,21 +4,21 @@ Minimal AssemblyAI streaming demo
 Continuously captures mic input and sends to AssemblyAI for transcription
 """
 
-import os
 import asyncio
-import requests
-import pyaudio
-import wave
+import os
 import tempfile
 import threading
-import time
+import wave
+
+import pyaudio
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 # Get API key
-ASSEMBLYAI_API_KEY = os.getenv('API_KEY')
+ASSEMBLYAI_API_KEY = os.getenv("API_KEY")
 if not ASSEMBLYAI_API_KEY:
     print("❌ No API_KEY found in environment")
     exit(1)
@@ -32,18 +32,17 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 CHUNK_DURATION = 3  # seconds per chunk
 
+
 # Exact function from the reference
 async def transcribe_audio_to_text(audio_bytes):
     headers = {
         "authorization": ASSEMBLYAI_API_KEY,
-        "content-type": "application/octet-stream"
+        "content-type": "application/octet-stream",
     }
 
     # Step 1: Upload audio file
     upload_response = requests.post(
-        "https://api.assemblyai.com/v2/upload",
-        headers=headers,
-        data=audio_bytes
+        "https://api.assemblyai.com/v2/upload", headers=headers, data=audio_bytes
     )
     audio_url = upload_response.json()["upload_url"]
 
@@ -51,14 +50,16 @@ async def transcribe_audio_to_text(audio_bytes):
     transcript_response = requests.post(
         "https://api.assemblyai.com/v2/transcript",
         json={"audio_url": audio_url},
-        headers={"authorization": ASSEMBLYAI_API_KEY}
+        headers={"authorization": ASSEMBLYAI_API_KEY},
     )
     transcript_id = transcript_response.json()["id"]
 
     # Step 3: Poll for completion
     polling_url = f"https://api.assemblyai.com/v2/transcript/{transcript_id}"
     while True:
-        polling_response = requests.get(polling_url, headers={"authorization": ASSEMBLYAI_API_KEY})
+        polling_response = requests.get(
+            polling_url, headers={"authorization": ASSEMBLYAI_API_KEY}
+        )
         status = polling_response.json()["status"]
 
         if status == "completed":
@@ -68,25 +69,27 @@ async def transcribe_audio_to_text(audio_bytes):
             return None
         await asyncio.sleep(1)
 
+
 def create_wav_bytes(audio_data):
     """Convert raw audio data to WAV format bytes"""
-    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
         temp_path = temp_file.name
 
     # Write WAV file
-    with wave.open(temp_path, 'wb') as wav_file:
+    with wave.open(temp_path, "wb") as wav_file:
         wav_file.setnchannels(CHANNELS)
         wav_file.setsampwidth(2)  # 16-bit = 2 bytes
         wav_file.setframerate(SAMPLE_RATE)
         wav_file.writeframes(audio_data)
 
     # Read WAV file as bytes
-    with open(temp_path, 'rb') as f:
+    with open(temp_path, "rb") as f:
         wav_bytes = f.read()
 
     # Clean up
     os.unlink(temp_path)
     return wav_bytes
+
 
 class StreamingTranscriber:
     def __init__(self):
@@ -106,7 +109,7 @@ class StreamingTranscriber:
                 channels=CHANNELS,
                 rate=SAMPLE_RATE,
                 input=True,
-                frames_per_buffer=CHUNK_SIZE
+                frames_per_buffer=CHUNK_SIZE,
             )
 
             self.running = True
@@ -127,7 +130,7 @@ class StreamingTranscriber:
                         print(f"\n📦 Processing {CHUNK_DURATION}s audio chunk...")
 
                         # Combine frames into audio data
-                        audio_data = b''.join(frames)
+                        audio_data = b"".join(frames)
 
                         # Convert to WAV bytes
                         wav_bytes = create_wav_bytes(audio_data)
@@ -171,6 +174,7 @@ class StreamingTranscriber:
         self.audio.terminate()
         print("✅ Streaming stopped")
 
+
 async def main():
     print("🎯 Minimal AssemblyAI Streaming Demo")
     print("Simulates real-time streaming using file-based API")
@@ -193,6 +197,7 @@ async def main():
     except KeyboardInterrupt:
         print("\n⏹️ Stopping...")
         transcriber.stop_streaming()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

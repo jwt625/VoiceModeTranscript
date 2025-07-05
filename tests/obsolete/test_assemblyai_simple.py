@@ -4,23 +4,25 @@ Minimal AssemblyAI streaming demo using direct API endpoints
 No SDK - just raw WebSocket API like the reference demo
 """
 
-import os
 import asyncio
-import websockets
 import json
+import os
+
 import pyaudio
 import requests
+import websockets
 
 # Load environment variables
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
     print("✅ Loaded .env file")
 except ImportError:
     print("⚠️ python-dotenv not available")
 
 # Get API key
-ASSEMBLYAI_API_KEY = os.getenv('API_KEY')
+ASSEMBLYAI_API_KEY = os.getenv("API_KEY")
 if not ASSEMBLYAI_API_KEY:
     print("❌ No API_KEY found in environment")
     exit(1)
@@ -32,6 +34,7 @@ SAMPLE_RATE = 16000
 CHUNK_SIZE = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+
 
 async def get_streaming_token():
     """Get a temporary streaming token"""
@@ -48,6 +51,7 @@ async def get_streaming_token():
         print(f"❌ Failed to get token: {response.status_code} - {response.text}")
         return None
 
+
 class StreamingTranscriber:
     def __init__(self):
         self.websocket = None
@@ -60,7 +64,7 @@ class StreamingTranscriber:
         uri = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}&token={token}"
 
         try:
-            print(f"🔗 Connecting to AssemblyAI WebSocket...")
+            print("🔗 Connecting to AssemblyAI WebSocket...")
             self.websocket = await websockets.connect(uri)
             print("✅ Connected to AssemblyAI streaming")
             return True
@@ -107,7 +111,7 @@ class StreamingTranscriber:
             channels=CHANNELS,
             rate=SAMPLE_RATE,
             input=True,
-            frames_per_buffer=CHUNK_SIZE
+            frames_per_buffer=CHUNK_SIZE,
         )
 
         self.running = True
@@ -160,11 +164,12 @@ class StreamingTranscriber:
                 await self.websocket.send(json.dumps({"terminate_session": True}))
                 await self.websocket.close()
                 print("🔌 Closed WebSocket")
-            except:
+            except Exception:
                 pass
 
         self.audio.terminate()
         print("✅ Cleanup complete")
+
 
 async def main():
     print("🎯 Minimal AssemblyAI Streaming Demo")
@@ -185,6 +190,7 @@ async def main():
         await transcriber.start_streaming()
     else:
         print("❌ Failed to connect to streaming service")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

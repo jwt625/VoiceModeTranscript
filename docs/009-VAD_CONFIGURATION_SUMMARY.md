@@ -10,7 +10,7 @@ User watches videos at 1.5x speed and VAD (Voice Activity Detection) is not dete
 - Created `_get_vad_config()` method with speed-optimized defaults
 - Added `get_speed_optimized_config()` static method with presets for different speeds:
   - 1.0x: 10s window, 0.6 threshold, 15s max duration
-  - 1.25x: 25s window, 0.2 threshold  
+  - 1.25x: 25s window, 0.2 threshold
   - 1.5x: 20s window, 0.6 threshold, 10s max duration
   - 2.0x: 4s window, 0.3 threshold
   - 2.5x: 3s window, 0.25 threshold
@@ -122,7 +122,7 @@ User watches videos at 1.5x speed and VAD (Voice Activity Detection) is not dete
 - `src/whisper_stream_processor.py` - Core VAD logic
 - `templates/index.html` - Frontend controls
 - `static/css/style.css` - Styling
-- `static/js/app.js` - JavaScript integration  
+- `static/js/app.js` - JavaScript integration
 - `app.py` - Backend API and configuration
 
 ## Recommendation

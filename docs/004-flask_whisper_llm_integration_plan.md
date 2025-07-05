@@ -88,7 +88,7 @@ This plan outlines the integration of the proven `test_llm_deduplication.py` sys
     "data": {"text": "...", "timestamp": "...", "count": 5}
 }
 {
-    "type": "llm_processing_start", 
+    "type": "llm_processing_start",
     "data": {"transcript_count": 5}
 }
 {
@@ -157,7 +157,7 @@ Audio Capture → Whisper.cpp Stream → Raw Transcript → SSE → Frontend
 
 ### 5.1 Database Operations
 - [ ] Implement `save_raw_transcript()` function
-- [ ] Implement `save_processed_transcript()` function  
+- [ ] Implement `save_processed_transcript()` function
 - [ ] Add `get_session_transcripts()` with type filtering
 - [ ] Implement transcript export functionality (JSON, TXT formats)
 
@@ -166,14 +166,14 @@ Audio Capture → Whisper.cpp Stream → Raw Transcript → SSE → Frontend
 # Raw transcript entry
 {
     "id": "uuid",
-    "session_id": "session_uuid", 
+    "session_id": "session_uuid",
     "text": "whisper.cpp output",
     "timestamp": "2024-01-01T12:00:00Z",
     "confidence": 0.85,
     "processing_time": 0.15
 }
 
-# Processed transcript entry  
+# Processed transcript entry
 {
     "id": "uuid",
     "session_id": "session_uuid",
@@ -235,7 +235,7 @@ WHISPER_MODEL_PATH=./whisper.cpp/models/ggml-base.en.bin
 - [ ] Database saves both raw and processed transcripts correctly
 - [ ] UI remains responsive during all operations
 
-### User Experience Metrics  
+### User Experience Metrics
 - [ ] Users can easily toggle between raw and processed views
 - [ ] Enter key reliably triggers LLM processing
 - [ ] Clear visual feedback during processing states
