@@ -110,17 +110,25 @@ This document tracks the progress of the major code refactoring effort to improv
   - Type-safe model classes with serialization methods
   - Centralized database operations (ready to replace app.py functions)
 
-### 📋 Task 4: Create service layer
-**Status**: NOT_STARTED
+### ✅ Task 4: Create service layer
+**Status**: COMPLETE
 
-**Plan**:
-- Extract business logic into service classes
-- Create services for:
-  - Audio processing
-  - Transcript processing
-  - LLM processing
-  - Session management
-  - Device management
+**Changes Made**:
+- **AppService** - Main coordinator service that orchestrates all functionality
+- **SessionService** - Recording session management with database integration
+- **DeviceService** - Audio device discovery, selection, and configuration
+- **TranscriptService** - Whisper.cpp processor management and transcript handling
+- **LLMService** - LLM processing coordination with async/sync support
+- **AudioService** - Audio capture and volume monitoring
+
+**Service Layer Features**:
+- Clean separation of business logic from Flask routes
+- Proper error handling and logging throughout
+- Event-driven architecture with SSE stream integration
+- Repository pattern integration for database operations
+- Configuration-driven setup using centralized config
+- Comprehensive status reporting and monitoring
+- Single AppService coordinates all functionality with focused service responsibilities
 
 ### 📋 Task 5: Refactor Flask routes
 **Status**: NOT_STARTED
@@ -166,15 +174,16 @@ This document tracks the progress of the major code refactoring effort to improv
 
 - **Development tools**: ✅ Fully set up and working
 - **Code quality**: ✅ All linting issues resolved
-- **Architecture**: ✅ Complete new structure with config and database layers
+- **Architecture**: ✅ Complete new structure with config, database, and service layers
 - **Database layer**: ✅ Models and repositories implemented
+- **Service layer**: ✅ Complete business logic extraction with 6 focused services
 - **Original functionality**: ✅ Preserved (no breaking changes yet)
 
 ## Next Steps
 
 1. ✅ ~~Continue with database layer extraction~~ **COMPLETE**
-2. 🔄 **IN PROGRESS**: Create service layer for business logic
-3. Refactor Flask routes into controllers
+2. ✅ ~~Create service layer for business logic~~ **COMPLETE**
+3. 🔄 **IN PROGRESS**: Refactor Flask routes into controllers
 4. Replace global variables with configuration system
 5. Add comprehensive type annotations
 6. Re-enable mypy type checking
