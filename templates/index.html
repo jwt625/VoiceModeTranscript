@@ -43,6 +43,23 @@
             <div class="accumulated-count">
                 Raw transcripts: <span id="accumulated-count">0</span>
             </div>
+            <div class="queue-status" id="queue-status" style="display: none;">
+                <span id="queue-status-text">Queue: 0 jobs</span>
+            </div>
+            <div class="llm-activity" id="llm-activity" style="display: none;">
+                <div class="activity-item">
+                    <span class="activity-label">Current Job:</span>
+                    <span id="current-job-info">None</span>
+                </div>
+                <div class="activity-item">
+                    <span class="activity-label">Processing Time:</span>
+                    <span id="processing-time-info">--</span>
+                </div>
+                <div class="activity-item">
+                    <span class="activity-label">Total Processed:</span>
+                    <span id="total-processed-info">0</span>
+                </div>
+            </div>
             <div class="processing-controls">
                 <div class="auto-processing-controls">
                     <label class="auto-processing-toggle">
@@ -170,6 +187,10 @@
                     <span id="last-llm-process">--</span>
                 </div>
                 <div class="metric">
+                    <label>Session Summary:</label>
+                    <span id="session-summary-status">--</span>
+                </div>
+                <div class="metric">
                     <label>Session Duration:</label>
                     <span id="session-duration">--</span>
                 </div>
@@ -218,6 +239,7 @@
                             <div class="session-selection">
                                 <button id="load-session-btn" class="btn btn-primary" disabled>Load Selected Session into Main Panels</button>
                                 <button id="export-session-btn" class="btn btn-export" disabled>📤 Export Selected Session</button>
+                                <button id="generate-summary-btn" class="btn btn-secondary" disabled>📝 Generate Summary</button>
                                 <span id="selected-session-info" class="selected-session-info">No session selected</span>
                             </div>
 

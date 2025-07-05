@@ -46,6 +46,9 @@ mic_whisper_processor = None
 system_whisper_processor = None
 llm_processor = None
 
+# Track sessions waiting for summary generation after stop recording
+sessions_waiting_for_summary = set()
+
 
 def on_whisper_transcript(event_data):
     """Callback for whisper streaming processor events"""
@@ -112,6 +115,14 @@ def on_llm_result(event_data):
                 },
                 block=False,
             )
+
+            # Check if this session is waiting for summary generation
+            session_id = event_data.get("session_id")
+            if session_id and session_id in sessions_waiting_for_summary:
+                print(
+                    f"📝 LLM processing complete for session {session_id}, checking if ready for summary..."
+                )
+                check_and_generate_summary_if_ready(session_id)
 
         elif event_data["type"] == "llm_processing_error":
             # Send error via SSE
@@ -731,6 +742,13 @@ def stop_recording():
         # Stop auto-processing timer
         stop_auto_processing_timer()
 
+        # Process any remaining raw transcripts before stopping
+        print("📝 Processing any remaining raw transcripts before stopping...")
+        try:
+            process_remaining_transcripts_before_stop(session_id)
+        except Exception as e:
+            print(f"⚠️ Error processing remaining transcripts: {e}")
+
         # Update state
         recording_state.update(
             {"is_recording": False, "session_id": None, "start_time": None}
@@ -770,6 +788,15 @@ def stop_recording():
 
         # Calculate and save session quality metrics
         calculate_and_save_session_metrics(session_id)
+
+        # Mark session as waiting for summary generation after LLM processing completes
+        print(
+            "📝 Marking session for summary generation after LLM processing completes..."
+        )
+        sessions_waiting_for_summary.add(session_id)
+
+        # Check if summary can be generated immediately (if no LLM processing is pending)
+        check_and_generate_summary_if_ready(session_id)
 
         return jsonify(
             {
@@ -970,7 +997,7 @@ def get_sessions():
         # Get session records from sessions table (preferred source)
         cursor.execute(
             """
-            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked
+            SELECT id, start_time, end_time, duration, total_segments, total_words, avg_confidence, bookmarked, summary, keywords, summary_generated_at
             FROM sessions
             ORDER BY start_time DESC
         """
@@ -1006,6 +1033,19 @@ def get_sessions():
                 total_words = session_data[5] or 0
                 avg_confidence = session_data[6] or 0.0
                 bookmarked = bool(session_data[7]) if len(session_data) > 7 else False
+                summary = session_data[8] if len(session_data) > 8 else None
+                keywords_json = session_data[9] if len(session_data) > 9 else None
+                summary_generated_at = (
+                    session_data[10] if len(session_data) > 10 else None
+                )
+
+                # Parse keywords JSON
+                keywords = []
+                if keywords_json:
+                    try:
+                        keywords = json.loads(keywords_json)
+                    except (json.JSONDecodeError, TypeError):
+                        keywords = []
             else:
                 start_time = transcript_data[2] if transcript_data else None
                 end_time = transcript_data[3] if transcript_data else None
@@ -1014,6 +1054,9 @@ def get_sessions():
                 total_words = 0
                 avg_confidence = 0.0
                 bookmarked = False
+                summary = None
+                keywords = []
+                summary_generated_at = None
 
             sessions.append(
                 {
@@ -1030,6 +1073,9 @@ def get_sessions():
                     "total_words": total_words,
                     "avg_confidence": avg_confidence,
                     "bookmarked": bookmarked,
+                    "summary": summary,
+                    "keywords": keywords,
+                    "summary_generated_at": summary_generated_at,
                     "display_name": f"Session {session_id.replace('session_', '')}",
                 }
             )
@@ -1062,6 +1108,37 @@ def get_transcript(session_id):
         return jsonify({"transcript": transcript})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/llm-status")
+def get_llm_status():
+    """Get LLM processor status and queue information"""
+    global llm_processor
+
+    try:
+        if not llm_processor:
+            return jsonify(
+                {"success": False, "error": "LLM processor not available"}
+            ), 503
+
+        # Get queue status
+        queue_status = llm_processor.get_queue_status()
+
+        # Get processor stats
+        stats = llm_processor.get_stats()
+
+        return jsonify(
+            {
+                "success": True,
+                "is_processing": llm_processor.is_processing,
+                "queue_length": len(queue_status),
+                "queue_jobs": queue_status,
+                "stats": stats,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/process-llm", methods=["POST"])
@@ -1451,6 +1528,37 @@ def toggle_session_bookmark(session_id):
                 "message": message,
             }
         )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sessions/<session_id>/generate-summary", methods=["POST"])
+def generate_session_summary_endpoint(session_id):
+    """Manually generate summary for a session"""
+    try:
+        # Use the session service to generate summary
+        import queue
+
+        from src.services.session_service import SessionService
+
+        # Create a temporary session service for this operation
+        temp_queue = queue.Queue()
+        session_service = SessionService(temp_queue)
+
+        result = session_service.generate_summary_for_session(session_id)
+
+        if result["success"]:
+            return jsonify(
+                {
+                    "success": True,
+                    "summary": result["summary"],
+                    "keywords": result["keywords"],
+                    "message": result["message"],
+                }
+            )
+        else:
+            return jsonify({"success": False, "error": result["error"]}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1977,7 +2085,10 @@ def init_database():
             avg_confidence REAL DEFAULT 0.0,
             confidence_count INTEGER DEFAULT 0,
             confidence_sum REAL DEFAULT 0.0,
-            bookmarked BOOLEAN DEFAULT 0
+            bookmarked BOOLEAN DEFAULT 0,
+            summary TEXT,
+            keywords TEXT,
+            summary_generated_at TEXT
         )
     """
     )
@@ -2092,6 +2203,25 @@ def init_database():
             "ALTER TABLE sessions ADD COLUMN confidence_sum REAL DEFAULT 0.0"
         )
         print("ℹ️  Added confidence_sum column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add summary columns to existing sessions table if they don't exist
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
+        print("ℹ️  Added summary column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN keywords TEXT")
+        print("ℹ️  Added keywords column to sessions table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN summary_generated_at TEXT")
+        print("ℹ️  Added summary_generated_at column to sessions table")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -2527,6 +2657,161 @@ def generate_csv_export(session_id, transcripts, metadata):
             )
 
     return output.getvalue()
+
+
+def check_and_generate_summary_if_ready(session_id):
+    """Check if a session is ready for summary generation and generate if ready."""
+    global llm_processor, sessions_waiting_for_summary
+
+    try:
+        if session_id not in sessions_waiting_for_summary:
+            return  # Session not waiting for summary
+
+        # Check if there are any pending LLM processing jobs for this session
+        if llm_processor:
+            queue_status = llm_processor.get_queue_status()
+            pending_jobs = [
+                job
+                for job in queue_status
+                if job.get("session_id") == session_id
+                and job.get("status") in ["queued", "processing"]
+            ]
+
+            if pending_jobs:
+                print(
+                    f"📝 Session {session_id} still has {len(pending_jobs)} pending LLM jobs, waiting..."
+                )
+                return  # Still processing, wait for completion
+
+        # No pending jobs, ready to generate summary
+        print(f"📝 Session {session_id} ready for summary generation!")
+        sessions_waiting_for_summary.remove(session_id)
+
+        # Generate summary asynchronously
+        generate_session_summary_async(session_id)
+
+    except Exception as e:
+        print(f"❌ Error checking summary readiness for session {session_id}: {e}")
+        # Remove from waiting list to prevent infinite waiting
+        sessions_waiting_for_summary.discard(session_id)
+
+
+def process_remaining_transcripts_before_stop(session_id):
+    """Process any remaining raw transcripts before stopping the session."""
+    global mic_whisper_processor, system_whisper_processor, llm_processor
+
+    try:
+        # Get accumulated transcripts from both processors
+        accumulated_transcripts = []
+
+        if mic_whisper_processor:
+            mic_transcripts = mic_whisper_processor.get_accumulated_transcripts()
+            accumulated_transcripts.extend(mic_transcripts)
+            print(f"📝 Found {len(mic_transcripts)} accumulated mic transcripts")
+
+        if system_whisper_processor:
+            system_transcripts = system_whisper_processor.get_accumulated_transcripts()
+            accumulated_transcripts.extend(system_transcripts)
+            print(f"📝 Found {len(system_transcripts)} accumulated system transcripts")
+
+        if accumulated_transcripts:
+            print(
+                f"📝 Processing {len(accumulated_transcripts)} remaining transcripts for session {session_id}"
+            )
+
+            # Sort transcripts by timestamp to maintain chronological order
+            accumulated_transcripts.sort(key=lambda x: x.get("timestamp", ""))
+
+            # Process with LLM synchronously (wait for completion)
+            if llm_processor:
+                job_id = llm_processor.process_transcripts_async(
+                    accumulated_transcripts, session_id
+                )
+                print(
+                    f"📝 Started LLM processing job {job_id} for remaining transcripts"
+                )
+
+                # Clear accumulated transcripts after sending to LLM
+                if mic_whisper_processor:
+                    mic_whisper_processor.clear_accumulated_transcripts()
+                if system_whisper_processor:
+                    system_whisper_processor.clear_accumulated_transcripts()
+            else:
+                print("⚠️ No LLM processor available for remaining transcripts")
+        else:
+            print("📝 No remaining transcripts to process")
+
+    except Exception as e:
+        print(f"❌ Error processing remaining transcripts: {e}")
+
+
+def generate_session_summary_async(session_id):
+    """Generate session summary asynchronously after session ends."""
+    import queue
+    import threading
+
+    from src.services.session_service import SessionService
+
+    def _generate_summary():
+        try:
+            # Create a temporary session service for this operation
+            temp_queue = queue.Queue()
+            session_service = SessionService(temp_queue)
+
+            # Wait a bit for any pending LLM processing to complete
+            import time
+
+            time.sleep(2)
+
+            print(f"📝 Generating summary for session {session_id}...")
+            result = session_service.generate_summary_for_session(session_id)
+
+            if result["success"]:
+                print(
+                    f"✅ Summary generated for session {session_id}: {result['summary'][:100]}..."
+                )
+
+                # Send summary event via SSE
+                try:
+                    stream_queue.put(
+                        {
+                            "type": "session_summary_generated",
+                            "session_id": session_id,
+                            "summary": result["summary"],
+                            "keywords": result["keywords"],
+                            "message": "📝 Session summary generated",
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                        block=False,
+                    )
+                except queue.Full:
+                    print("⚠️ Stream queue full, dropping summary event")
+            else:
+                print(
+                    f"❌ Failed to generate summary for session {session_id}: {result['error']}"
+                )
+
+                # Send error event via SSE
+                try:
+                    stream_queue.put(
+                        {
+                            "type": "session_summary_error",
+                            "session_id": session_id,
+                            "error": result["error"],
+                            "message": "❌ Failed to generate session summary",
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                        block=False,
+                    )
+                except queue.Full:
+                    print("⚠️ Stream queue full, dropping summary error event")
+
+        except Exception as e:
+            print(f"❌ Error in summary generation thread: {e}")
+
+    # Start summary generation in a separate thread to avoid blocking the stop response
+    summary_thread = threading.Thread(target=_generate_summary, daemon=True)
+    summary_thread.start()
 
 
 if __name__ == "__main__":

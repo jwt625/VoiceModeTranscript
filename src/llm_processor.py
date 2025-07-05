@@ -4,6 +4,7 @@ LLM Processor Module for Flask Integration
 Handles LLM-based transcript deduplication and processing using Lambda Labs API
 """
 
+import json
 import os
 import threading
 import time
@@ -322,6 +323,159 @@ Do not include explanations, metadata, or timestamps in your output - only the s
             }
             for job in self.processing_queue
         ]
+
+    def generate_session_summary(
+        self, processed_transcripts: list[dict[str, Any]], session_id: str
+    ) -> dict[str, Any]:
+        """
+        Generate a session summary and keywords from processed transcripts
+
+        Args:
+            processed_transcripts: List of processed transcript dictionaries
+            session_id: Session identifier
+
+        Returns:
+            dict: Summary result with summary, keywords, and metadata
+        """
+        if not processed_transcripts:
+            return {
+                "session_id": session_id,
+                "error": "No processed transcripts to summarize",
+                "status": "error",
+            }
+
+        start_time = time.time()
+
+        try:
+            # Format processed transcripts for summary generation
+            formatted_text = self._format_processed_transcripts_for_summary(
+                processed_transcripts
+            )
+
+            print(
+                f"🤖 Generating summary for session {session_id} from {len(processed_transcripts)} processed transcripts..."
+            )
+
+            # Call LLM API for summary generation
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": self._get_summary_system_prompt()},
+                    {
+                        "role": "user",
+                        "content": f"Please analyze this transcript session and generate a summary:\n\n{formatted_text}",
+                    },
+                ],
+                model=self.model,
+                temperature=0.1,  # Low temperature for consistent summaries
+                max_tokens=1000,
+                timeout=30,
+            )
+
+            # Parse the response
+            content = response.choices[0].message.content.strip()
+
+            # Try to parse as JSON
+            try:
+                summary_data = json.loads(content)
+
+                if (
+                    not isinstance(summary_data, dict)
+                    or "summary" not in summary_data
+                    or "keywords" not in summary_data
+                ):
+                    raise ValueError("Invalid summary format")
+
+                summary = summary_data["summary"]
+                keywords = summary_data["keywords"]
+
+                if not isinstance(keywords, list) or len(keywords) != 5:
+                    raise ValueError("Keywords must be a list of 5 items")
+
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"⚠️  Failed to parse LLM summary response as JSON: {e}")
+                # Fallback: treat entire response as summary
+                summary = content
+                keywords = []
+
+            processing_time = time.time() - start_time
+
+            result = {
+                "session_id": session_id,
+                "summary": summary,
+                "keywords": keywords,
+                "processed_transcript_count": len(processed_transcripts),
+                "processing_time": processing_time,
+                "timestamp": datetime.now().isoformat(),
+                "status": "success",
+            }
+
+            print(f"✅ Generated summary in {processing_time:.2f}s: {summary[:100]}...")
+            if keywords:
+                print(f"🏷️  Keywords: {', '.join(keywords)}")
+
+            return result
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            error_result = {
+                "session_id": session_id,
+                "error": str(e),
+                "processed_transcript_count": len(processed_transcripts),
+                "processing_time": processing_time,
+                "timestamp": datetime.now().isoformat(),
+                "status": "error",
+            }
+
+            print(f"❌ Summary generation failed after {processing_time:.2f}s: {e}")
+            return error_result
+
+    def _format_processed_transcripts_for_summary(
+        self, processed_transcripts: list[dict[str, Any]]
+    ) -> str:
+        """Format processed transcripts for summary generation"""
+        formatted_lines = []
+
+        for transcript in processed_transcripts:
+            timestamp = transcript.get("timestamp", "Unknown")
+            text = transcript.get("processed_text", "").strip()
+
+            if not text:
+                continue
+
+            # Add timestamp and text
+            formatted_lines.append(f"[{timestamp}] {text}")
+
+        return "\n".join(formatted_lines)
+
+    def _get_summary_system_prompt(self) -> str:
+        """Get the system prompt for summary generation"""
+        return """You are an expert at analyzing conversation transcripts and creating concise summaries.
+
+Your task is to analyze the provided transcript session and generate:
+1. A single, clear sentence that summarizes what this transcript session is about
+2. Exactly 5 relevant keywords/tags that best represent the content
+
+Focus on:
+- Main topics discussed
+- Key concepts or subjects
+- Purpose or context of the conversation
+- Important themes or activities
+- Technical terms or specific domains mentioned
+
+Guidelines:
+- The summary should be one complete sentence that captures the essence of the session
+- Keywords should be single words or short phrases (2-3 words max)
+- Keywords should be diverse and cover different aspects of the content
+- Avoid generic words like "discussion", "conversation", "talk"
+- Focus on specific, meaningful terms
+
+Return your response in this exact JSON format:
+{
+  "summary": "One sentence summary of the session",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
+}
+
+Do not include any explanations or additional text outside the JSON response."""
 
 
 # Test function for development

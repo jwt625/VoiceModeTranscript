@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Optional
 
 from ..config import get_config
-from ..models import SessionRepository
+from ..llm_processor import LLMProcessor
+from ..models import ProcessedTranscriptRepository, SessionRepository
 
 
 class SessionService:
@@ -15,6 +16,8 @@ class SessionService:
         """Initialize session service."""
         self.config = get_config()
         self.session_repository = SessionRepository()
+        self.processed_transcript_repository = ProcessedTranscriptRepository()
+        self.llm_processor = LLMProcessor(callback=self._on_summary_result)
         self.stream_queue = stream_queue
         self.current_session: Optional[dict] = None
 
@@ -92,6 +95,10 @@ class SessionService:
         )
 
         result = self.current_session.copy()
+
+        # Generate session summary after stopping
+        self._generate_session_summary_async(session_id)
+
         self.current_session = None
         return result
 
@@ -157,3 +164,193 @@ class SessionService:
             self.stream_queue.put(event_data, block=False)
         except queue.Full:
             print(f"⚠️ Stream queue full, dropping {event_type} event")
+
+    def _generate_session_summary_async(self, session_id: str) -> None:
+        """Generate session summary asynchronously after session ends."""
+        try:
+            # Get all processed transcripts for this session
+            processed_transcripts = self.processed_transcript_repository.get_by_session(
+                session_id
+            )
+
+            if not processed_transcripts:
+                print(
+                    f"ℹ️  No processed transcripts found for session {session_id}, skipping summary generation"
+                )
+                return
+
+            # Convert to dict format for LLM processor
+            transcript_dicts = [
+                {
+                    "processed_text": t.processed_text,
+                    "timestamp": t.timestamp,
+                    "llm_model": t.llm_model,
+                    "original_transcript_count": t.original_transcript_count,
+                }
+                for t in processed_transcripts
+            ]
+
+            print(
+                f"📝 Generating summary for session {session_id} with {len(transcript_dicts)} processed transcripts..."
+            )
+
+            # Send summary start event via SSE
+            self._send_session_event(
+                "session_summary_start",
+                {
+                    "session_id": session_id,
+                    "transcript_count": len(transcript_dicts),
+                    "message": "📝 Generating session summary...",
+                },
+            )
+
+            # Generate summary using LLM processor
+            summary_result = self.llm_processor.generate_session_summary(
+                transcript_dicts, session_id
+            )
+
+            # Handle the result in the callback
+            self._on_summary_result(
+                {"type": "summary_complete", "result": summary_result}
+            )
+
+        except Exception as e:
+            print(f"❌ Error generating session summary for {session_id}: {e}")
+            self._on_summary_result(
+                {
+                    "type": "summary_error",
+                    "result": {
+                        "session_id": session_id,
+                        "error": str(e),
+                        "status": "error",
+                    },
+                }
+            )
+
+    def _on_summary_result(self, event_data: dict) -> None:
+        """Handle summary generation results."""
+        try:
+            result = event_data.get("result", {})
+            session_id = result.get("session_id")
+
+            if (
+                event_data.get("type") == "summary_complete"
+                and result.get("status") == "success"
+            ):
+                # Save summary to database
+                summary = result.get("summary", "")
+                keywords = result.get("keywords", [])
+                summary_generated_at = result.get("timestamp", "")
+
+                # Update session with summary
+                success = self.session_repository.update_summary(
+                    session_id, summary, keywords, summary_generated_at
+                )
+
+                if success:
+                    print(
+                        f"✅ Saved summary for session {session_id}: {summary[:100]}..."
+                    )
+                    if keywords:
+                        print(f"🏷️  Keywords: {', '.join(keywords)}")
+
+                    # Send summary event via SSE
+                    self._send_session_event(
+                        "session_summary_generated",
+                        {
+                            "session_id": session_id,
+                            "summary": summary,
+                            "keywords": keywords,
+                            "message": "📝 Session summary generated",
+                        },
+                    )
+                else:
+                    print(f"❌ Failed to save summary for session {session_id}")
+
+            elif event_data.get("type") == "summary_error":
+                error = result.get("error", "Unknown error")
+                print(f"❌ Summary generation failed for session {session_id}: {error}")
+
+                # Send error event via SSE
+                self._send_session_event(
+                    "session_summary_error",
+                    {
+                        "session_id": session_id,
+                        "error": error,
+                        "message": "❌ Failed to generate session summary",
+                    },
+                )
+
+        except Exception as e:
+            print(f"❌ Error handling summary result: {e}")
+
+    def generate_summary_for_session(self, session_id: str) -> dict:
+        """Manually generate summary for a specific session."""
+        try:
+            # Get all processed transcripts for this session
+            processed_transcripts = self.processed_transcript_repository.get_by_session(
+                session_id
+            )
+
+            if not processed_transcripts:
+                return {
+                    "success": False,
+                    "error": "No processed transcripts found for this session",
+                }
+
+            # Convert to dict format for LLM processor
+            transcript_dicts = [
+                {
+                    "processed_text": t.processed_text,
+                    "timestamp": t.timestamp,
+                    "llm_model": t.llm_model,
+                    "original_transcript_count": t.original_transcript_count,
+                }
+                for t in processed_transcripts
+            ]
+
+            # Send summary start event via SSE
+            self._send_session_event(
+                "session_summary_start",
+                {
+                    "session_id": session_id,
+                    "transcript_count": len(transcript_dicts),
+                    "message": "📝 Generating session summary...",
+                },
+            )
+
+            # Generate summary synchronously
+            summary_result = self.llm_processor.generate_session_summary(
+                transcript_dicts, session_id
+            )
+
+            if summary_result.get("status") == "success":
+                # Save to database
+                summary = summary_result.get("summary")
+                keywords = summary_result.get("keywords", [])
+                summary_generated_at = summary_result.get("timestamp")
+
+                success = self.session_repository.update_summary(
+                    session_id, summary, keywords, summary_generated_at
+                )
+
+                if success:
+                    return {
+                        "success": True,
+                        "summary": summary,
+                        "keywords": keywords,
+                        "message": "Summary generated successfully",
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Failed to save summary to database",
+                    }
+            else:
+                return {
+                    "success": False,
+                    "error": summary_result.get("error", "Summary generation failed"),
+                }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}

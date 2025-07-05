@@ -370,6 +370,43 @@ header h1 {
     color: #a1a1a6;
 }
 
+.queue-status {
+    font-size: 14px;
+    color: #ff9500;
+    background: rgba(255, 149, 0, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 149, 0, 0.3);
+}
+
+.llm-activity {
+    font-size: 13px;
+    color: #a1a1a6;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #3a3a3a;
+}
+
+.activity-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.activity-item:last-child {
+    margin-bottom: 0;
+}
+
+.activity-label {
+    color: #8e8e93;
+}
+
+.activity-item span:last-child {
+    color: #ffffff;
+    font-weight: 500;
+}
+
 /* Processing Controls Container */
 .processing-controls {
     display: flex;
@@ -1257,6 +1294,42 @@ header h1 {
 
 .data-table tr.selected .bookmark-star:not(.bookmarked) {
     color: #ffffff;
+}
+
+/* Summary and Keywords Styling */
+.summary-cell {
+    max-width: 300px;
+}
+
+.summary-text {
+    display: block;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.no-summary {
+    color: #8e8e93;
+    font-style: italic;
+}
+
+.keywords-cell {
+    max-width: 200px;
+}
+
+.keyword-tag {
+    display: inline-block;
+    background: #007aff;
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin: 1px 2px;
+    white-space: nowrap;
+}
+
+.no-keywords {
+    color: #8e8e93;
+    font-style: italic;
 }
 
 /* Session Browser Controls */

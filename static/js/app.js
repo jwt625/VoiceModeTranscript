@@ -45,6 +45,9 @@ class TranscriptRecorder {
 
         // Load VAD settings
         this.loadVADSettings();
+
+        // Start periodic queue status updates
+        this.startPeriodicQueueStatusUpdates();
     }
 
     initializeElements() {
@@ -77,6 +80,12 @@ class TranscriptRecorder {
         this.llmStatusText = document.getElementById('llm-status-text');
         this.llmSpinner = document.getElementById('llm-spinner');
         this.accumulatedCount = document.getElementById('accumulated-count');
+        this.queueStatus = document.getElementById('queue-status');
+        this.queueStatusText = document.getElementById('queue-status-text');
+        this.llmActivity = document.getElementById('llm-activity');
+        this.currentJobInfo = document.getElementById('current-job-info');
+        this.processingTimeInfo = document.getElementById('processing-time-info');
+        this.totalProcessedInfo = document.getElementById('total-processed-info');
 
         // Auto-processing elements
         this.autoProcessingEnabled = document.getElementById('auto-processing-enabled');
@@ -125,6 +134,7 @@ class TranscriptRecorder {
         // Session browser elements
         this.sessionBrowserControls = document.getElementById('session-browser-controls');
         this.loadSessionBtn = document.getElementById('load-session-btn');
+        this.generateSummaryBtn = document.getElementById('generate-summary-btn');
         this.selectedSessionInfo = document.getElementById('selected-session-info');
 
         // Bookmark filtering elements
@@ -149,6 +159,7 @@ class TranscriptRecorder {
         this.whisperStatus = document.getElementById('whisper-status');
         this.llmProcessingStatus = document.getElementById('llm-processing-status');
         this.lastLLMProcess = document.getElementById('last-llm-process');
+        this.sessionSummaryStatus = document.getElementById('session-summary-status');
         this.sessionDuration = document.getElementById('session-duration');
         this.processingDelaySpan = document.getElementById('processing-delay');
         this.lastSaveSpan = document.getElementById('last-save');
@@ -221,6 +232,9 @@ class TranscriptRecorder {
         // Session browser controls
         if (this.loadSessionBtn) {
             this.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
+        }
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.addEventListener('click', () => this.generateSummaryForSession());
         }
 
         // Bookmark filtering controls
@@ -364,6 +378,18 @@ class TranscriptRecorder {
                     case 'whisper_error':
                         console.log('❌ Whisper error:', data);
                         this.handleWhisperError(data);
+                        break;
+                    case 'session_summary_start':
+                        console.log('📝 Session summary generation started:', data);
+                        this.handleSessionSummaryStart(data);
+                        break;
+                    case 'session_summary_generated':
+                        console.log('📝 Session summary generated:', data);
+                        this.handleSessionSummaryGenerated(data);
+                        break;
+                    case 'session_summary_error':
+                        console.log('❌ Session summary error:', data);
+                        this.handleSessionSummaryError(data);
                         break;
                     case 'heartbeat':
                         console.log('💓 Heartbeat received');
@@ -1025,6 +1051,7 @@ class TranscriptRecorder {
         // Update LLM status
         this.llmStatusText.textContent = 'Ready for transcripts';
         this.whisperStatus.textContent = 'Running';
+        this.sessionSummaryStatus.textContent = 'Waiting...';
 
         // Enable/disable buttons
         this.startBtn.disabled = true;
@@ -1049,6 +1076,7 @@ class TranscriptRecorder {
         // Update status
         this.whisperStatus.textContent = 'Stopped';
         this.llmProcessingStatus.textContent = 'Idle';
+        this.sessionSummaryStatus.textContent = 'Pending...';
 
         // Enable/disable buttons
         this.startBtn.disabled = false;
@@ -1165,7 +1193,7 @@ class TranscriptRecorder {
         try {
             this.isLLMProcessing = true;
             this.processLLMBtn.disabled = true;
-            this.llmStatusText.textContent = 'Processing with LLM...';
+            this.llmStatusText.textContent = '🚀 Starting LLM processing...';
             this.llmSpinner.style.display = 'block';
 
             const response = await fetch('/api/process-llm', {
@@ -1185,58 +1213,253 @@ class TranscriptRecorder {
             }
 
             console.log('🤖 LLM processing started:', result);
+            this.llmStatusText.textContent = `🤖 Queued ${result.transcript_count || this.rawTranscriptCount} transcripts for processing`;
+
+            // Show notification about successful queueing
+            this.showNotification('info', `Queued ${result.transcript_count || this.rawTranscriptCount} transcripts for LLM processing`);
+
+            // Update queue status
+            this.updateLLMQueueStatus();
 
         } catch (error) {
             console.error('❌ Error starting LLM processing:', error);
             this.showErrorMessage('Failed to start LLM processing: ' + error.message);
             this.isLLMProcessing = false;
             this.processLLMBtn.disabled = false;
-            this.llmStatusText.textContent = 'Error';
+            this.llmStatusText.textContent = '❌ Error';
             this.llmSpinner.style.display = 'none';
         }
     }
 
     handleLLMProcessingStart(data) {
         this.currentLLMJob = data.job_id;
-        this.llmProcessingStatus.textContent = `Processing ${data.transcript_count} transcripts`;
-        this.llmStatusText.textContent = `Processing ${data.transcript_count} transcripts...`;
+        this.llmProcessingStartTime = Date.now();
+
+        // Update status with more detailed information
+        const statusText = `Processing ${data.transcript_count} transcripts`;
+        this.llmProcessingStatus.textContent = statusText;
+        this.llmStatusText.textContent = `🤖 ${statusText}...`;
+
+        // Show spinner and disable button
+        this.llmSpinner.style.display = 'block';
+        this.processLLMBtn.disabled = true;
+
+        // Start processing timer
+        this.startLLMProcessingTimer();
+
+        // Show activity panel and update current job info
+        this.llmActivity.style.display = 'block';
+        this.currentJobInfo.textContent = `${data.transcript_count} transcripts`;
+
+        console.log(`🤖 Started LLM processing job ${data.job_id} with ${data.transcript_count} transcripts`);
     }
 
     handleLLMProcessingComplete(data) {
         const result = data.result;
+        const processingTime = this.llmProcessingStartTime ?
+            ((Date.now() - this.llmProcessingStartTime) / 1000).toFixed(1) : 'unknown';
+
+        // Stop processing timer
+        this.stopLLMProcessingTimer();
 
         if (result.status === 'success') {
             this.addProcessedTranscript(result);
-            this.llmStatusText.textContent = 'Processing complete';
+            this.llmStatusText.textContent = `✅ Processing complete (${processingTime}s)`;
             this.lastLLMProcess.textContent = new Date().toLocaleTimeString();
+
+            // Show success notification with processing time
+            this.showNotification('success', `LLM processing completed in ${processingTime}s`);
         } else {
-            this.llmStatusText.textContent = 'Processing failed';
+            this.llmStatusText.textContent = `❌ Processing failed (${processingTime}s)`;
             this.showErrorMessage('LLM processing failed: ' + (result.error || 'Unknown error'));
         }
 
         // Reset processing state
         this.isLLMProcessing = false;
         this.currentLLMJob = null;
+        this.llmProcessingStartTime = null;
         this.llmSpinner.style.display = 'none';
         this.llmProcessingStatus.textContent = 'Idle';
+
+        // Update activity panel
+        this.currentJobInfo.textContent = 'None';
+        this.processingTimeInfo.textContent = '--';
 
         // Re-enable button if we have more transcripts
         if (this.rawTranscriptCount > 0) {
             this.processLLMBtn.disabled = false;
         }
+
+        // Update queue status
+        this.updateLLMQueueStatus();
     }
 
     handleLLMProcessingError(data) {
+        const processingTime = this.llmProcessingStartTime ?
+            ((Date.now() - this.llmProcessingStartTime) / 1000).toFixed(1) : 'unknown';
+
+        // Stop processing timer
+        this.stopLLMProcessingTimer();
+
         this.showErrorMessage('LLM processing error: ' + data.error);
         this.isLLMProcessing = false;
         this.currentLLMJob = null;
+        this.llmProcessingStartTime = null;
         this.llmSpinner.style.display = 'none';
-        this.llmStatusText.textContent = 'Error';
+        this.llmStatusText.textContent = `❌ Error (${processingTime}s)`;
         this.llmProcessingStatus.textContent = 'Error';
+
+        // Update activity panel
+        this.currentJobInfo.textContent = 'None';
+        this.processingTimeInfo.textContent = '--';
 
         if (this.rawTranscriptCount > 0) {
             this.processLLMBtn.disabled = false;
         }
+
+        // Update queue status
+        this.updateLLMQueueStatus();
+    }
+
+    startLLMProcessingTimer() {
+        // Clear any existing timer
+        this.stopLLMProcessingTimer();
+
+        // Update status every second with elapsed time
+        this.llmProcessingTimer = setInterval(() => {
+            if (this.llmProcessingStartTime) {
+                const elapsed = ((Date.now() - this.llmProcessingStartTime) / 1000).toFixed(0);
+                const baseText = this.llmProcessingStatus.textContent.split(' (')[0]; // Remove existing timer
+                this.llmProcessingStatus.textContent = `${baseText} (${elapsed}s)`;
+
+                // Update processing time in activity panel
+                if (this.processingTimeInfo) {
+                    this.processingTimeInfo.textContent = `${elapsed}s`;
+                }
+            }
+        }, 1000);
+    }
+
+    stopLLMProcessingTimer() {
+        if (this.llmProcessingTimer) {
+            clearInterval(this.llmProcessingTimer);
+            this.llmProcessingTimer = null;
+        }
+    }
+
+    async updateLLMQueueStatus() {
+        try {
+            const response = await fetch('/api/llm-status');
+            const result = await response.json();
+
+            if (result.success) {
+                this.displayLLMQueueStatus(result);
+            } else {
+                console.warn('Failed to get LLM status:', result.error);
+            }
+        } catch (error) {
+            console.warn('Error fetching LLM status:', error);
+        }
+    }
+
+    displayLLMQueueStatus(status) {
+        const queueLength = status.queue_length || 0;
+        const isProcessing = status.is_processing || false;
+        const stats = status.stats || {};
+
+        // Update queue status
+        if (queueLength > 0) {
+            this.queueStatusText.textContent = `Queue: ${queueLength} job${queueLength > 1 ? 's' : ''}`;
+            this.queueStatus.style.display = 'block';
+        } else {
+            this.queueStatus.style.display = 'none';
+        }
+
+        // Update activity panel
+        if (isProcessing || queueLength > 0 || stats.total_processed > 0) {
+            this.llmActivity.style.display = 'block';
+
+            // Current job info
+            if (isProcessing) {
+                const currentJob = status.queue_jobs && status.queue_jobs.length > 0 ?
+                    status.queue_jobs.find(job => job.status === 'processing') : null;
+                if (currentJob) {
+                    this.currentJobInfo.textContent = `${currentJob.transcript_count} transcripts`;
+                } else {
+                    this.currentJobInfo.textContent = 'Processing...';
+                }
+            } else {
+                this.currentJobInfo.textContent = 'None';
+            }
+
+            // Processing time (if currently processing)
+            if (isProcessing && this.llmProcessingStartTime) {
+                const elapsed = ((Date.now() - this.llmProcessingStartTime) / 1000).toFixed(0);
+                this.processingTimeInfo.textContent = `${elapsed}s`;
+            } else {
+                this.processingTimeInfo.textContent = '--';
+            }
+
+            // Total processed
+            this.totalProcessedInfo.textContent = stats.total_processed || 0;
+
+        } else {
+            this.llmActivity.style.display = 'none';
+        }
+
+        // Show queue details in console for debugging
+        if (status.queue_jobs && status.queue_jobs.length > 0) {
+            console.log('📋 LLM Queue jobs:', status.queue_jobs);
+        }
+    }
+
+    startPeriodicQueueStatusUpdates() {
+        // Update queue status every 5 seconds
+        this.queueStatusInterval = setInterval(() => {
+            this.updateLLMQueueStatus();
+        }, 5000);
+
+        // Initial update
+        this.updateLLMQueueStatus();
+    }
+
+    handleSessionSummaryStart(data) {
+        console.log('📝 Session summary generation started:', data);
+
+        // Update session summary status
+        this.sessionSummaryStatus.textContent = '🤖 Generating...';
+
+        // Show notification about summary generation starting
+        this.showNotification('info', `📝 Generating session summary from ${data.transcript_count} processed transcripts...`);
+    }
+
+    handleSessionSummaryGenerated(data) {
+        console.log('📝 Session summary generated:', data);
+
+        // Update session summary status
+        this.sessionSummaryStatus.textContent = '✅ Generated';
+
+        // Show success notification
+        this.showNotification('success', `📝 Session summary generated: ${data.summary.substring(0, 100)}...`);
+
+        // If the Database Inspector is open, refresh the sessions table to show the new summary
+        if (this.databaseModal && this.databaseModal.style.display !== 'none') {
+            this.loadSessionsTable();
+        }
+
+        // Log the summary and keywords for debugging
+        console.log('Summary:', data.summary);
+        console.log('Keywords:', data.keywords);
+    }
+
+    handleSessionSummaryError(data) {
+        console.log('❌ Session summary error:', data);
+
+        // Update session summary status
+        this.sessionSummaryStatus.textContent = '❌ Failed';
+
+        // Show error notification
+        this.showErrorMessage(`Failed to generate session summary: ${data.error}`);
     }
 
     // Auto-processing methods
@@ -1785,6 +2008,9 @@ class TranscriptRecorder {
         this.selectedSessionId = null;
         this.loadSessionBtn.disabled = true;
         this.exportSessionBtn.disabled = true;
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.disabled = true;
+        }
         this.selectedSessionInfo.textContent = 'No session selected';
 
         // Hide export options if they were shown
@@ -1835,6 +2061,8 @@ class TranscriptRecorder {
                     <tr>
                         <th>Bookmark</th>
                         <th>Session ID</th>
+                        <th>Summary</th>
+                        <th>Keywords</th>
                         <th>Raw Transcripts</th>
                         <th>Processed Transcripts</th>
                         <th>Start Time</th>
@@ -1852,6 +2080,18 @@ class TranscriptRecorder {
                                 </span>
                             </td>
                             <td class="text-truncate">${session.display_name}</td>
+                            <td class="summary-cell" title="${session.summary || 'No summary available'}">
+                                ${session.summary ?
+                                    `<span class="summary-text">${session.summary.length > 80 ? session.summary.substring(0, 80) + '...' : session.summary}</span>` :
+                                    '<span class="no-summary">No summary</span>'
+                                }
+                            </td>
+                            <td class="keywords-cell">
+                                ${session.keywords && session.keywords.length > 0 ?
+                                    session.keywords.map(keyword => `<span class="keyword-tag">${keyword}</span>`).join(' ') :
+                                    '<span class="no-keywords">No keywords</span>'
+                                }
+                            </td>
                             <td>${session.raw_transcript_count}</td>
                             <td>${session.processed_transcript_count}</td>
                             <td>${new Date(session.start_time).toLocaleString()}</td>
@@ -1902,9 +2142,71 @@ class TranscriptRecorder {
         // Update UI
         this.loadSessionBtn.disabled = false;
         this.exportSessionBtn.disabled = false;
+        if (this.generateSummaryBtn) {
+            this.generateSummaryBtn.disabled = false;
+        }
         this.selectedSessionInfo.textContent = `Selected: ${row.cells[1].textContent}`; // Session ID is now in column 1
 
         console.log(`📖 Selected session: ${this.selectedSessionId}`);
+    }
+
+    async generateSummaryForSession() {
+        if (!this.selectedSessionId) {
+            this.showErrorMessage('No session selected');
+            return;
+        }
+
+        const startTime = Date.now();
+        let processingTimer;
+
+        try {
+            // Show loading state with enhanced feedback
+            this.generateSummaryBtn.textContent = '🚀 Starting...';
+            this.generateSummaryBtn.disabled = true;
+
+            // Start a timer to show processing time
+            processingTimer = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                this.generateSummaryBtn.textContent = `🤖 Generating... (${elapsed}s)`;
+            }, 1000);
+
+            // Show initial notification
+            this.showNotification('info', '📝 Starting session summary generation...');
+
+            const response = await fetch(`/api/sessions/${this.selectedSessionId}/generate-summary`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                this.showNotification('success', `✅ Summary generated in ${processingTime}s: ${result.summary.substring(0, 80)}...`);
+
+                // Reload the sessions table to show the new summary
+                await this.loadSessionsTable();
+
+                // Re-select the session if it's still visible
+                const sessionRow = this.tableContent.querySelector(`tr[data-session-id="${this.selectedSessionId}"]`);
+                if (sessionRow) {
+                    this.selectSession(sessionRow);
+                }
+            } else {
+                throw new Error(result.error || 'Failed to generate summary');
+            }
+
+        } catch (error) {
+            console.error('Error generating summary:', error);
+            const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+            this.showErrorMessage(`❌ Failed to generate summary after ${processingTime}s: ${error.message}`);
+        } finally {
+            // Clear processing timer and restore button state
+            if (processingTimer) {
+                clearInterval(processingTimer);
+            }
+            this.generateSummaryBtn.textContent = '📝 Generate Summary';
+            this.generateSummaryBtn.disabled = false;
+        }
     }
 
     async toggleBookmark(sessionId, starElement) {
