@@ -297,11 +297,5 @@ yarn-error.log*
 *.swo
 *~
 
-# Compiled whisper.cpp binaries
-whisper.cpp/main
-whisper.cpp/stream
-whisper.cpp/server
-whisper.cpp/bench
-whisper.cpp/quantize
-whisper.cpp/*.o
-whisper.cpp/build/
+# Compiled whisper.cpp binaries and entire directory
+whisper.cpp/
