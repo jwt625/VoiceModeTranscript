@@ -448,6 +448,9 @@ class LLMModule extends ModuleBase {
         console.log(`🤖 Auto-processing triggered for ${rawCount} transcripts`);
 
         try {
+            // Get session ID from recording module
+            const sessionId = this.getGlobalState('recording.sessionId');
+
             // Make API call to trigger auto-processing
             const response = await fetch('/api/process-llm', {
                 method: 'POST',
@@ -455,6 +458,7 @@ class LLMModule extends ModuleBase {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
+                    session_id: sessionId,
                     auto_triggered: true
                 })
             });

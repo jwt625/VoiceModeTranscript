@@ -1,9 +1,10 @@
 # ChatGPT Voice Mode Transcript Recorder
 
-A real-time transcript recorder for ChatGPT voice conversations with dual audio capture, whisper.cpp streaming, and intelligent LLM deduplication. Built with a clean, modular architecture using service-oriented design.
+A real-time transcript recorder for ChatGPT voice conversations with dual audio capture, whisper.cpp streaming, and intelligent LLM deduplication. Built with a **fully modular frontend architecture** and clean service-oriented backend design.
 
 ## Features
 
+### Core Functionality
 - **Real-time transcription** using whisper.cpp streaming
 - **Dual audio capture** - microphone and system audio simultaneously
 - **Intelligent deduplication** using LLM processing to clean overlapping transcripts
@@ -12,7 +13,13 @@ A real-time transcript recorder for ChatGPT voice conversations with dual audio 
 - **Session export** - download transcripts in JSON, TXT, or CSV formats
 - **Session browser** - view and manage historical recording sessions
 - **Dark mode interface** with real-time status indicators
-- **Modular architecture** - clean separation of concerns with service layer
+
+### Architecture
+- **Modular Frontend** - 8 focused JavaScript modules with event-driven communication
+- **Service-Oriented Backend** - Clean separation of concerns with dedicated service layer
+- **Event Bus System** - Loose coupling between frontend modules
+- **State Management** - Centralized state store with reactive updates
+- **Error Handling** - Comprehensive error handling and recovery mechanisms
 
 ## Prerequisites
 
@@ -193,6 +200,45 @@ The app uses SQLite with three main tables:
 - `POST /api/process-llm` - Trigger LLM processing
 - `GET /api/status` - Get current recording status
 
+## Frontend Architecture
+
+The application features a **fully modular frontend** that replaced a 3,397-line monolithic JavaScript file with 8 focused modules:
+
+### Module Structure
+```
+static/js/
+├── app-modular.js         # Main application orchestrator
+├── core/
+│   ├── event-bus.js       # Event communication system
+│   ├── state-store.js     # Centralized state management
+│   └── module-base.js     # Base class for all modules
+├── config/
+│   └── module-config.js   # Module configuration and dependencies
+└── modules/
+    ├── recording.js       # Recording control and state management
+    ├── transcript.js      # Transcript display and management
+    ├── llm.js            # LLM processing coordination
+    ├── database.js       # Database operations and session browser
+    ├── ui.js             # User interface controls and notifications
+    ├── device.js         # Audio device management
+    ├── sse.js            # Server-Sent Events handling
+    └── utils.js          # Shared utilities and helpers
+```
+
+### Key Benefits
+- **Maintainability**: Each module has a single, focused responsibility
+- **Testability**: Modules can be tested in isolation
+- **Scalability**: Easy to add new features without affecting existing code
+- **Debugging**: Issues can be isolated to specific modules
+- **Reusability**: Modules can be reused in other contexts
+
+### Event-Driven Communication
+- **EventBus**: Centralized event system for loose coupling between modules
+- **State Store**: Reactive state management with subscription-based updates
+- **Module Lifecycle**: Proper initialization, cleanup, and error handling
+
+For detailed implementation information, see `docs/014-frontend_modularization_plan.md`.
+
 ## Development
 
 ### Code Quality
@@ -213,11 +259,13 @@ uv run ruff check src/ app.py
 uv run ruff format src/ app.py
 ```
 
-### Architecture
+### Backend Architecture
 - **Configuration**: Centralized in `src/config/settings.py` with environment variable support
 - **Database**: Repository pattern in `src/models/` for clean data access
 - **Business Logic**: Service layer in `src/services/` with focused responsibilities
 - **Controllers**: Flask routes (to be refactored from `app.py`)
+- **Audio Processing**: whisper.cpp integration with streaming support
+- **Real-time Communication**: Server-Sent Events (SSE) for live updates
 
 ## Troubleshooting
 
@@ -230,6 +278,8 @@ uv run ruff format src/ app.py
 - **Port 5001 in use**: Kill existing processes with `lsof -ti:5001 | xargs kill -9`
 - **No sessions visible**: Check if any recording sessions have been completed
 - **Database errors**: Ensure SQLite database file has proper permissions
+- **Duplicate transcripts**: Fixed in July 2025 - ensure you're using the latest modular frontend
+- **Recording not stopping**: Fixed in July 2025 - backend now properly responds to stop commands
 
 ### File Locations
 - **Database**: `transcripts.db` in project root

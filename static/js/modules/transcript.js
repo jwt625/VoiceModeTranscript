@@ -78,6 +78,7 @@ class TranscriptModule extends ModuleBase {
         this.on('transcript:clear_requested', () => this.clearTranscripts());
         this.on('transcript:finalize_current_message', () => this.finalizeCurrentMessage());
         this.on('transcript:load_session_transcripts', (data) => this.loadTranscriptsIntoPanel(data.rawTranscripts, data.processedTranscripts));
+        this.on('transcript:reset_counts', () => this.resetTranscriptCounts());
 
         // Listen for copy requests
         this.on('utils:copy_requested', () => this.handleCopyRequest());
@@ -166,8 +167,9 @@ class TranscriptModule extends ModuleBase {
         rawTranscripts.push(transcriptData);
         this.setState('rawTranscripts', rawTranscripts);
 
-        // Update count
-        const newCount = this.getState('rawCount') + 1;
+        // Update count - use accumulated_count from backend if available (like monolithic version)
+        const accumulatedCount = data.accumulated_count;
+        const newCount = accumulatedCount !== undefined ? accumulatedCount : this.getState('rawCount') + 1;
         this.setState('rawCount', newCount);
 
         // Update UI count displays
