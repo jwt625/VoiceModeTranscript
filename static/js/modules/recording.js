@@ -54,6 +54,7 @@ class RecordingModule extends ModuleBase {
      */
     async onDestroy() {
         this.stopDurationTimer();
+        this.removeExistingEventListeners();
     }
 
     /**
@@ -72,6 +73,7 @@ class RecordingModule extends ModuleBase {
 
         // Listen for SSE events
         this.on('recording:sse_event', (data) => this.handleSSEEvent(data));
+        this.on('recording:whisper_error', (data) => this.handleWhisperError(data));
 
         // Listen for state sync events
         this.on('app:validate_state_sync', (data) => this.validateStateSync(data));
@@ -100,34 +102,53 @@ class RecordingModule extends ModuleBase {
      * Set up button event listeners
      */
     setupButtonEventListeners() {
+        // Remove any existing listeners to prevent duplicates
+        this.removeExistingEventListeners();
+
         if (this.elements.startBtn) {
-            this.elements.startBtn.addEventListener('click', () => {
-                this.emit('recording:start_requested');
-            });
+            this.startBtnHandler = () => this.emit('recording:start_requested');
+            this.elements.startBtn.addEventListener('click', this.startBtnHandler);
         }
 
         if (this.elements.pauseBtn) {
-            this.elements.pauseBtn.addEventListener('click', () => {
-                this.emit('recording:pause_requested');
-            });
+            this.pauseBtnHandler = () => this.emit('recording:pause_requested');
+            this.elements.pauseBtn.addEventListener('click', this.pauseBtnHandler);
         }
 
         if (this.elements.resumeBtn) {
-            this.elements.resumeBtn.addEventListener('click', () => {
-                this.emit('recording:resume_requested');
-            });
+            this.resumeBtnHandler = () => this.emit('recording:resume_requested');
+            this.elements.resumeBtn.addEventListener('click', this.resumeBtnHandler);
         }
 
         if (this.elements.stopBtn) {
-            this.elements.stopBtn.addEventListener('click', () => {
-                this.emit('recording:stop_requested');
-            });
+            this.stopBtnHandler = () => this.emit('recording:stop_requested');
+            this.elements.stopBtn.addEventListener('click', this.stopBtnHandler);
         }
 
         if (this.elements.clearBtn) {
-            this.elements.clearBtn.addEventListener('click', () => {
-                this.emit('recording:clear_requested');
-            });
+            this.clearBtnHandler = () => this.emit('recording:clear_requested');
+            this.elements.clearBtn.addEventListener('click', this.clearBtnHandler);
+        }
+    }
+
+    /**
+     * Remove existing event listeners to prevent duplicates
+     */
+    removeExistingEventListeners() {
+        if (this.elements.startBtn && this.startBtnHandler) {
+            this.elements.startBtn.removeEventListener('click', this.startBtnHandler);
+        }
+        if (this.elements.pauseBtn && this.pauseBtnHandler) {
+            this.elements.pauseBtn.removeEventListener('click', this.pauseBtnHandler);
+        }
+        if (this.elements.resumeBtn && this.resumeBtnHandler) {
+            this.elements.resumeBtn.removeEventListener('click', this.resumeBtnHandler);
+        }
+        if (this.elements.stopBtn && this.stopBtnHandler) {
+            this.elements.stopBtn.removeEventListener('click', this.stopBtnHandler);
+        }
+        if (this.elements.clearBtn && this.clearBtnHandler) {
+            this.elements.clearBtn.removeEventListener('click', this.clearBtnHandler);
         }
     }
 
@@ -567,6 +588,40 @@ class RecordingModule extends ModuleBase {
                 if (this.debugMode) {
                     console.log('❓ Unknown recording SSE event:', data.type);
                 }
+        }
+    }
+
+    /**
+     * Handle whisper error (matches monolithic implementation)
+     */
+    handleWhisperError(data) {
+        this.emit('ui:notification', {
+            type: 'error',
+            message: 'Whisper error: ' + data.message
+        });
+        this.emit('ui:status_updated', { status: 'error', message: 'Error' });
+    }
+
+    /**
+     * Handle whisper error events
+     */
+    handleWhisperError(data) {
+        console.log('❌ Whisper error:', data);
+
+        this.emit('ui:notification', {
+            type: 'error',
+            message: 'Whisper error: ' + (data.message || 'Unknown error')
+        });
+
+        // Update status to show error
+        this.emit('ui:status_updated', {
+            status: 'error',
+            message: 'Whisper Error'
+        });
+
+        // If recording was in progress, stop it
+        if (this.getState('isRecording')) {
+            this.handleRecordingError('Whisper processing failed: ' + (data.message || 'Unknown error'));
         }
     }
 

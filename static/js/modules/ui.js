@@ -80,7 +80,7 @@ class UIModule extends ModuleBase {
         this.elements.statusDot = document.querySelector('.status-dot');
         this.elements.statusText = document.querySelector('.status-text');
 
-        // Button elements
+        // Button elements (for state management only - recording module handles click events)
         this.elements.startBtn = document.getElementById('start-btn');
         this.elements.pauseBtn = document.getElementById('pause-btn');
         this.elements.resumeBtn = document.getElementById('resume-btn');

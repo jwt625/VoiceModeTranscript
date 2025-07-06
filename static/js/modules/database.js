@@ -959,11 +959,64 @@ class DatabaseModule extends ModuleBase {
     }
 
     /**
-     * Toggle session bookmark (placeholder for now)
+     * Toggle session bookmark
      */
     async toggleSessionBookmark(sessionId) {
-        console.log('Toggle bookmark for session:', sessionId);
-        // This would need to be implemented with the actual bookmark API
+        try {
+            // Find the star element
+            const starElement = this.elements.tableContent.querySelector(`[data-session-id="${sessionId}"]`);
+            if (!starElement) return;
+
+            // Show loading state
+            const originalText = starElement.textContent;
+            starElement.textContent = '⏳';
+            starElement.style.pointerEvents = 'none';
+
+            // Make API call to toggle bookmark
+            const response = await fetch(`/api/sessions/${sessionId}/bookmark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Update star appearance
+                if (result.bookmarked) {
+                    starElement.textContent = '★';
+                    starElement.classList.add('bookmarked');
+                    starElement.title = 'Remove bookmark';
+                } else {
+                    starElement.textContent = '☆';
+                    starElement.classList.remove('bookmarked');
+                    starElement.title = 'Add bookmark';
+                }
+
+                // Show success notification
+                this.emit('ui:notification', {
+                    type: 'success',
+                    message: result.message
+                });
+                console.log(`🔖 ${result.message}: ${sessionId}`);
+            } else {
+                throw new Error(result.error || 'Failed to toggle bookmark');
+            }
+
+        } catch (error) {
+            console.error('Error toggling bookmark:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to toggle bookmark'
+            });
+        } finally {
+            // Re-enable clicking
+            const starElement = this.elements.tableContent.querySelector(`[data-session-id="${sessionId}"]`);
+            if (starElement) {
+                starElement.style.pointerEvents = 'auto';
+            }
+        }
     }
 
     /**
@@ -984,16 +1037,87 @@ class DatabaseModule extends ModuleBase {
             // Close database inspector
             this.closeDatabaseInspector();
 
-            // Emit event to load session into main panels
-            this.emit('database:load_session_into_panels', {
-                sessionId: this.selectedSessionId
-            });
+            // Enter session viewing mode
+            this.enterSessionViewingMode(this.selectedSessionId);
+
+            // Load session transcripts into main panels
+            await this.loadSessionIntoMainPanels(this.selectedSessionId);
 
         } catch (error) {
             console.error('Error loading selected session:', error);
             this.emit('ui:notification', {
                 type: 'error',
-                message: 'Failed to load session'
+                message: 'Failed to load session transcripts'
+            });
+        }
+    }
+
+    /**
+     * Enter session viewing mode
+     */
+    enterSessionViewingMode(sessionId) {
+        // Set session viewing state
+        this.setState('isSessionViewingMode', true);
+        this.setState('viewingSessionId', sessionId);
+
+        // Emit events to clear current transcripts and update UI
+        this.emit('transcript:clear_requested');
+        this.emit('ui:status_updated', {
+            status: 'viewing',
+            message: `Viewing Session: ${sessionId.replace('session_', '')}`
+        });
+
+        // Show session info
+        this.emit('ui:session_info_updated', {
+            sessionId: sessionId,
+            duration: 'Historical',
+            visible: true
+        });
+
+        // Update LLM status for historical session
+        this.emit('llm:status_updated', { message: 'Historical session loaded' });
+
+        // Disable recording controls, enable viewing controls
+        this.emit('ui:button_state_updated', { buttonId: 'startBtn', disabled: false });
+        this.emit('ui:button_state_updated', { buttonId: 'stopBtn', disabled: true });
+        this.emit('ui:button_state_updated', { buttonId: 'processLLMBtn', disabled: true });
+
+        console.log(`📖 Entered session viewing mode for: ${sessionId}`);
+    }
+
+    /**
+     * Load session into main panels
+     */
+    async loadSessionIntoMainPanels(sessionId) {
+        try {
+            // Load raw transcripts
+            const rawResponse = await fetch(`/api/raw-transcripts/${sessionId}?page=1&limit=1000`);
+            const rawResult = await rawResponse.json();
+
+            // Load processed transcripts
+            const processedResponse = await fetch(`/api/processed-transcripts/${sessionId}?page=1&limit=1000`);
+            const processedResult = await processedResponse.json();
+
+            // Prepare transcript data
+            const rawTranscripts = (rawResponse.ok && rawResult.transcripts) ? rawResult.transcripts : [];
+            const processedTranscripts = (processedResponse.ok && processedResult.transcripts) ? processedResult.transcripts : [];
+
+            // Load transcripts into panels using the correct event
+            this.emit('transcript:load_session_transcripts', {
+                rawTranscripts: rawTranscripts,
+                processedTranscripts: processedTranscripts
+            });
+
+            this.emit('ui:notification', {
+                type: 'success',
+                message: `Loaded session: ${sessionId.replace('session_', '')}`
+            });
+
+        } catch (error) {
+            console.error('Error loading session into main panels:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to load session transcripts'
             });
         }
     }
@@ -1010,20 +1134,71 @@ class DatabaseModule extends ModuleBase {
             return;
         }
 
-        try {
-            console.log(`📝 Generating summary for session: ${this.selectedSessionId}`);
+        const startTime = Date.now();
+        let processingTimer;
 
-            // Emit event to generate summary
-            this.emit('database:generate_session_summary', {
-                sessionId: this.selectedSessionId
+        try {
+            // Show loading state with enhanced feedback
+            if (this.elements.generateSummaryBtn) {
+                this.elements.generateSummaryBtn.textContent = '🚀 Starting...';
+                this.elements.generateSummaryBtn.disabled = true;
+            }
+
+            // Start a timer to show processing time
+            processingTimer = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                if (this.elements.generateSummaryBtn) {
+                    this.elements.generateSummaryBtn.textContent = `🤖 Generating... (${elapsed}s)`;
+                }
+            }, 1000);
+
+            // Show initial notification
+            this.emit('ui:notification', {
+                type: 'info',
+                message: '📝 Starting session summary generation...'
             });
+
+            const response = await fetch(`/api/sessions/${this.selectedSessionId}/generate-summary`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                this.emit('ui:notification', {
+                    type: 'success',
+                    message: `✅ Summary generated in ${processingTime}s: ${result.summary.substring(0, 80)}...`
+                });
+
+                // Reload the sessions table to show the new summary
+                await this.loadSessionsTable();
+
+                // Re-select the session if it's still visible
+                const sessionRow = this.elements.tableContent.querySelector(`tr[data-session-id="${this.selectedSessionId}"]`);
+                if (sessionRow) {
+                    this.selectSession(sessionRow);
+                }
+            } else {
+                throw new Error(result.error || 'Failed to generate summary');
+            }
 
         } catch (error) {
             console.error('Error generating summary:', error);
+            const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
             this.emit('ui:notification', {
                 type: 'error',
-                message: 'Failed to generate summary'
+                message: `❌ Failed to generate summary after ${processingTime}s: ${error.message}`
             });
+        } finally {
+            // Clear processing timer and restore button state
+            if (processingTimer) {
+                clearInterval(processingTimer);
+            }
+            if (this.elements.generateSummaryBtn) {
+                this.elements.generateSummaryBtn.textContent = '📝 Generate Summary';
+                this.elements.generateSummaryBtn.disabled = false;
+            }
         }
     }
 
@@ -1044,25 +1219,181 @@ class DatabaseModule extends ModuleBase {
      * Bookmark all visible sessions
      */
     async bookmarkAllVisible() {
-        console.log('Bookmark all visible sessions');
-        // This would need to be implemented with the actual bookmark API
+        try {
+            // Get all currently visible sessions
+            const sessionRows = this.elements.tableContent.querySelectorAll('tr.selectable');
+            const sessionIds = Array.from(sessionRows).map(row => row.dataset.sessionId);
+
+            if (sessionIds.length === 0) {
+                this.emit('ui:notification', {
+                    type: 'warning',
+                    message: 'No sessions visible to bookmark'
+                });
+                return;
+            }
+
+            // Show confirmation dialog
+            const confirmed = confirm(`Bookmark all ${sessionIds.length} visible sessions?`);
+            if (!confirmed) return;
+
+            // Disable button during operation
+            if (this.elements.bookmarkAllVisibleBtn) {
+                this.elements.bookmarkAllVisibleBtn.disabled = true;
+                this.elements.bookmarkAllVisibleBtn.textContent = '⏳ Bookmarking...';
+            }
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            // Bookmark each session
+            for (const sessionId of sessionIds) {
+                try {
+                    const response = await fetch(`/api/sessions/${sessionId}/bookmark`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ bookmark: true })
+                    });
+
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Error bookmarking session ${sessionId}:`, error);
+                }
+            }
+
+            // Show result notification
+            if (errorCount === 0) {
+                this.emit('ui:notification', {
+                    type: 'success',
+                    message: `Successfully bookmarked ${successCount} sessions`
+                });
+            } else {
+                this.emit('ui:notification', {
+                    type: 'warning',
+                    message: `Bookmarked ${successCount} sessions, ${errorCount} failed`
+                });
+            }
+
+            // Reload sessions to reflect changes
+            await this.loadSessionsTable();
+
+        } catch (error) {
+            console.error('Error in bulk bookmark operation:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to bookmark sessions'
+            });
+        } finally {
+            // Re-enable button
+            if (this.elements.bookmarkAllVisibleBtn) {
+                this.elements.bookmarkAllVisibleBtn.disabled = false;
+                this.elements.bookmarkAllVisibleBtn.textContent = '🔖 Bookmark All Visible';
+            }
+        }
     }
 
     /**
      * Clear all bookmarks
      */
     async clearAllBookmarks() {
-        console.log('Clear all bookmarks');
-        // This would need to be implemented with the actual bookmark API
+        try {
+            // Show confirmation dialog
+            const confirmed = confirm('Remove ALL bookmarks? This action cannot be undone.');
+            if (!confirmed) return;
+
+            // Disable button during operation
+            if (this.elements.clearAllBookmarksBtn) {
+                this.elements.clearAllBookmarksBtn.disabled = true;
+                this.elements.clearAllBookmarksBtn.textContent = '⏳ Clearing...';
+            }
+
+            // Get all bookmarked sessions
+            const response = await fetch('/api/sessions?bookmarked=true');
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to get bookmarked sessions');
+            }
+
+            const bookmarkedSessions = result.sessions || [];
+            let successCount = 0;
+            let errorCount = 0;
+
+            // Clear bookmark for each session
+            for (const session of bookmarkedSessions) {
+                try {
+                    const clearResponse = await fetch(`/api/sessions/${session.session_id}/bookmark`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ bookmark: false })
+                    });
+
+                    if (clearResponse.ok) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Error clearing bookmark for session ${session.session_id}:`, error);
+                }
+            }
+
+            // Show result notification
+            if (errorCount === 0) {
+                this.emit('ui:notification', {
+                    type: 'success',
+                    message: `Successfully cleared ${successCount} bookmarks`
+                });
+            } else {
+                this.emit('ui:notification', {
+                    type: 'warning',
+                    message: `Cleared ${successCount} bookmarks, ${errorCount} failed`
+                });
+            }
+
+            // Reload sessions to reflect changes
+            await this.loadSessionsTable();
+
+        } catch (error) {
+            console.error('Error in clear all bookmarks operation:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to clear bookmarks'
+            });
+        } finally {
+            // Re-enable button
+            if (this.elements.clearAllBookmarksBtn) {
+                this.elements.clearAllBookmarksBtn.disabled = false;
+                this.elements.clearAllBookmarksBtn.textContent = '🗑️ Clear All Bookmarks';
+            }
+        }
     }
 
     /**
      * Show export options
      */
     showExportOptions() {
+        if (!this.selectedSessionId) {
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'No session selected'
+            });
+            return;
+        }
+
         if (this.elements.exportOptions) {
             this.elements.exportOptions.style.display = 'block';
         }
+        console.log(`📤 Showing export options for session: ${this.selectedSessionId}`);
     }
 
     /**
@@ -1087,17 +1418,31 @@ class DatabaseModule extends ModuleBase {
         }
 
         try {
-            console.log(`📤 Exporting session: ${this.selectedSessionId}`);
+            const format = this.elements.exportFormatSelect?.value || 'json';
+            const content = this.elements.exportContentSelect?.value || 'both';
 
-            // Emit event to handle export
-            this.emit('database:export_session', {
-                sessionId: this.selectedSessionId,
-                format: this.elements.exportFormatSelect?.value || 'json',
-                content: this.elements.exportContentSelect?.value || 'both'
+            console.log(`📤 Downloading export: ${this.selectedSessionId}, format: ${format}, content: ${content}`);
+
+            // Build the export URL
+            const exportUrl = `/api/sessions/${this.selectedSessionId}/export?format=${format}&content=${content}`;
+
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = exportUrl;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Hide export options and show success message
+            this.hideExportOptions();
+            this.emit('ui:notification', {
+                type: 'success',
+                message: `Session exported as ${format.toUpperCase()}`
             });
 
         } catch (error) {
-            console.error('Error exporting session:', error);
+            console.error('Error downloading export:', error);
             this.emit('ui:notification', {
                 type: 'error',
                 message: 'Failed to export session'
