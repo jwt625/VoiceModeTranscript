@@ -418,6 +418,12 @@ class RecordingModule extends ModuleBase {
 
         this.stopDurationTimer();
 
+        // Update button states to match original app
+        this.emit('ui:button_state_updated', { buttonId: 'startBtn', disabled: false });
+        this.emit('ui:button_state_updated', { buttonId: 'pauseBtn', disabled: true, visible: true });
+        this.emit('ui:button_state_updated', { buttonId: 'resumeBtn', disabled: true, visible: false });
+        this.emit('ui:button_state_updated', { buttonId: 'stopBtn', disabled: true });
+
         // Emit events for other modules
         this.emit('recording:stopped', data);
         this.emit('ui:status_updated', { status: 'ready', message: 'Ready' });
