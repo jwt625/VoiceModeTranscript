@@ -291,6 +291,25 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <!-- Core Infrastructure -->
+    <script src="{{ url_for('static', filename='js/core/event-bus.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/state-store.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/module-base.js') }}"></script>
+
+    <!-- Module Configuration -->
+    <script src="{{ url_for('static', filename='js/config/module-config.js') }}"></script>
+
+    <!-- Application Modules -->
+    <script src="{{ url_for('static', filename='js/modules/utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/sse.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/device.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/recording.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/transcript.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/llm.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/database.js') }}"></script>
+
+    <!-- Main Application Orchestrator -->
+    <script src="{{ url_for('static', filename='js/app-modular.js') }}"></script>
 </body>
 </html>
