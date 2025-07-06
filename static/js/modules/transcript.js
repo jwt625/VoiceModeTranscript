@@ -77,6 +77,7 @@ class TranscriptModule extends ModuleBase {
         this.on('transcript:processed_received', (data) => this.addProcessedTranscript(data));
         this.on('transcript:clear_requested', () => this.clearTranscripts());
         this.on('transcript:finalize_current_message', () => this.finalizeCurrentMessage());
+        this.on('transcript:load_session_transcripts', (data) => this.loadTranscriptsIntoPanel(data.rawTranscripts, data.processedTranscripts));
 
         // Listen for SSE events
         this.on('sse:raw_transcript', (data) => this.addRawTranscript(data));

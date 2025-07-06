@@ -30,6 +30,12 @@ class ModularTranscriptRecorder {
      */
     async initialize() {
         try {
+            // Prevent double initialization
+            if (this.isInitialized) {
+                console.warn('⚠️ Application is already initialized, skipping...');
+                return;
+            }
+
             console.log('🚀 Initializing Modular Transcript Recorder...');
 
             // Initialize core systems
@@ -125,6 +131,12 @@ class ModularTranscriptRecorder {
      */
     async initializeModule(moduleName) {
         try {
+            // Check if module is already initialized
+            if (this.modules.has(moduleName)) {
+                console.warn(`⚠️ Module '${moduleName}' is already initialized, skipping...`);
+                return;
+            }
+
             console.log(`🔧 Initializing ${moduleName} module...`);
 
             // Get module configuration
@@ -151,16 +163,18 @@ class ModularTranscriptRecorder {
                 moduleInstance.setDebugMode(true);
             }
 
+            // Store module reference before initialization to prevent double initialization
+            this.modules.set(moduleName, moduleInstance);
+
             // Initialize the module
             await moduleInstance.initialize();
-
-            // Store module reference
-            this.modules.set(moduleName, moduleInstance);
 
             console.log(`✅ ${moduleName} module initialized`);
 
         } catch (error) {
             console.error(`❌ Failed to initialize ${moduleName} module:`, error);
+            // Remove from modules map if initialization failed
+            this.modules.delete(moduleName);
             throw error;
         }
     }
@@ -408,6 +422,12 @@ class ModularTranscriptRecorder {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
+    // Prevent multiple initializations
+    if (window.transcriptRecorder && window.transcriptRecorder.isInitialized) {
+        console.warn('⚠️ Application is already initialized, skipping DOMContentLoaded handler...');
+        return;
+    }
+
     console.log('🚀 Starting Modular Transcript Recorder...');
 
     try {
