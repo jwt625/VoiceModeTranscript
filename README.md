@@ -140,6 +140,7 @@ curl "http://localhost:5001/api/sessions/session_20250704_233045/export?format=j
 
 ## Project Structure
 
+### Backend Structure
 ```
 src/
 ├── config/          # Configuration management
@@ -163,6 +164,34 @@ src/
 ├── llm_processor.py        # LLM processing engine
 ├── sdl_device_mapper.py    # SDL/PyAudio device mapping
 └── whisper_stream_processor.py  # Whisper.cpp integration
+```
+
+### Frontend Structure
+```
+static/
+├── css/
+│   └── style.css           # Application styles and dark mode theme
+└── js/
+    ├── app-modular.js      # Main application orchestrator
+    ├── app-monolithic-backup.js  # Legacy monolithic version (backup)
+    ├── core/               # Core framework modules
+    │   ├── event-bus.js    # Event communication system
+    │   ├── state-store.js  # Centralized state management
+    │   └── module-base.js  # Base class for all modules
+    ├── config/
+    │   └── module-config.js # Module configuration and dependencies
+    └── modules/            # Feature modules
+        ├── recording.js    # Recording control and state management
+        ├── transcript.js   # Transcript display and management
+        ├── llm.js         # LLM processing coordination
+        ├── database.js    # Database operations and session browser
+        ├── ui.js          # User interface controls and notifications
+        ├── device.js      # Audio device management
+        ├── sse.js         # Server-Sent Events handling
+        └── utils.js       # Shared utilities and helpers
+
+templates/
+└── index.html              # Main application template
 ```
 
 ## Database Structure

@@ -38,6 +38,7 @@ class TranscriptModule extends ModuleBase {
             processedTranscripts: [],
             rawCount: 0,
             processedCount: 0,
+            accumulatedCount: 0, // Count of transcripts pending LLM processing
             qualityMetrics: {
                 segmentCount: 0,
                 wordCount: 0,
@@ -79,6 +80,8 @@ class TranscriptModule extends ModuleBase {
         this.on('transcript:finalize_current_message', () => this.finalizeCurrentMessage());
         this.on('transcript:load_session_transcripts', (data) => this.loadTranscriptsIntoPanel(data.rawTranscripts, data.processedTranscripts));
         this.on('transcript:reset_counts', () => this.resetTranscriptCounts());
+
+
 
         // Listen for copy requests
         this.on('utils:copy_requested', () => this.handleCopyRequest());
@@ -167,10 +170,15 @@ class TranscriptModule extends ModuleBase {
         rawTranscripts.push(transcriptData);
         this.setState('rawTranscripts', rawTranscripts);
 
-        // Update count - use accumulated_count from backend if available (like monolithic version)
-        const accumulatedCount = data.accumulated_count;
-        const newCount = accumulatedCount !== undefined ? accumulatedCount : this.getState('rawCount') + 1;
-        this.setState('rawCount', newCount);
+        // Update raw count (incremental, never resets)
+        const newRawCount = this.getState('rawCount') + 1;
+        this.setState('rawCount', newRawCount);
+
+        // Update accumulated count from backend (resets when backend clears accumulated transcripts)
+        const backendAccumulatedCount = data.accumulated_count;
+        if (backendAccumulatedCount !== undefined) {
+            this.setState('accumulatedCount', backendAccumulatedCount);
+        }
 
         // Update UI count displays
         this.updateCountDisplays();
@@ -187,7 +195,7 @@ class TranscriptModule extends ModuleBase {
         }
 
         // Enable LLM processing if we have transcripts
-        this.emit('llm:transcripts_available', { count: newCount });
+        this.emit('llm:transcripts_available', { count: newRawCount });
 
         if (this.debugMode) {
             console.log('📝 Raw transcript added:', transcriptData);
@@ -324,6 +332,7 @@ class TranscriptModule extends ModuleBase {
         this.setState('processedTranscripts', []);
         this.setState('rawCount', 0);
         this.setState('processedCount', 0);
+        this.setState('accumulatedCount', 0);
         this.setState('qualityMetrics', {
             segmentCount: 0,
             wordCount: 0,
@@ -358,7 +367,9 @@ class TranscriptModule extends ModuleBase {
     updateCountDisplays() {
         const rawCount = this.getState('rawCount');
         const processedCount = this.getState('processedCount');
+        const accumulatedCount = this.getState('accumulatedCount');
 
+        // Raw count next to transcript panel (should NOT reset)
         if (this.elements.rawCountSpan) {
             this.elements.rawCountSpan.textContent = rawCount.toString();
         }
@@ -367,8 +378,9 @@ class TranscriptModule extends ModuleBase {
             this.elements.processedCountSpan.textContent = processedCount.toString();
         }
 
+        // Accumulated count in LLM status area (should reset after processing)
         if (this.elements.accumulatedCount) {
-            this.elements.accumulatedCount.textContent = rawCount.toString();
+            this.elements.accumulatedCount.textContent = accumulatedCount.toString();
         }
     }
 
@@ -612,6 +624,8 @@ class TranscriptModule extends ModuleBase {
             // Update state
             this.setState('rawTranscripts', rawTranscripts);
             this.setState('rawCount', rawTranscripts.length);
+            // When loading historical transcripts, accumulated count should be 0 (no pending processing)
+            this.setState('accumulatedCount', 0);
 
             // Calculate quality metrics
             this.calculateQualityMetricsFromTranscripts(rawTranscripts);
@@ -684,13 +698,16 @@ class TranscriptModule extends ModuleBase {
         }
     }
 
+
+
     /**
      * Get transcript counts
      */
     getTranscriptCounts() {
         return {
             raw: this.getState('rawCount'),
-            processed: this.getState('processedCount')
+            processed: this.getState('processedCount'),
+            accumulated: this.getState('accumulatedCount')
         };
     }
 
