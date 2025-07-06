@@ -44,6 +44,9 @@ class RecordingModule extends ModuleBase {
         this.initializeElements();
         this.setupEventListeners();
 
+        // Recover server state on initialization (like monolithic app)
+        await this.recoverServerState();
+
         if (this.debugMode) {
             console.log('🔧 Recording module initialized');
         }
@@ -228,6 +231,20 @@ class RecordingModule extends ModuleBase {
 
                 console.log('Recording started:', result);
             } else {
+                // Special handling for "Already recording" error - trigger state recovery
+                if (result.error && result.error.includes('Already recording')) {
+                    console.log('🔄 "Already recording" detected, triggering state recovery...');
+
+                    this.emit('ui:notification', {
+                        type: 'warning',
+                        message: 'Recording may have started with limited functionality: ' + result.error
+                    });
+
+                    // Trigger state recovery to sync with server
+                    await this.recoverServerState();
+                    return;
+                }
+
                 // Don't immediately fail - wait for SSE confirmation
                 // The server might have partial success (e.g., system audio works but mic fails)
                 console.warn('API start failed, but waiting for SSE confirmation:', result.error);
@@ -660,7 +677,11 @@ class RecordingModule extends ModuleBase {
             this.setState('isRecording', true);
             this.setState('sessionId', serverState.session_id);
             this.setState('startTime', serverState.start_time);
-            this.setState('status', 'recording');
+
+            // Handle pause state
+            const isPaused = serverState.is_paused || false;
+            this.setState('isPaused', isPaused);
+            this.setState('status', isPaused ? 'paused' : 'recording');
 
             this.startDurationTimer();
 
@@ -669,15 +690,46 @@ class RecordingModule extends ModuleBase {
                 this.elements.sessionIdSpan.textContent = serverState.session_id;
             }
 
+            // Update UI status and button states based on pause state (matches monolithic behavior)
+            if (isPaused) {
+                this.emit('ui:status_updated', { status: 'paused', message: 'Paused' });
+                this.emit('ui:button_state_updated', { buttonId: 'pauseBtn', visible: false });
+                this.emit('ui:button_state_updated', { buttonId: 'resumeBtn', visible: true, disabled: false });
+            } else {
+                this.emit('ui:status_updated', { status: 'recording', message: 'Recording' });
+                this.emit('ui:button_state_updated', { buttonId: 'pauseBtn', disabled: false, visible: true });
+                this.emit('ui:button_state_updated', { buttonId: 'resumeBtn', visible: false });
+            }
+
+            // Common button states for recording (paused or active)
+            this.emit('ui:button_state_updated', { buttonId: 'startBtn', disabled: true });
+            this.emit('ui:button_state_updated', { buttonId: 'stopBtn', disabled: false });
+            this.emit('ui:button_state_updated', { buttonId: 'processLLMBtn', disabled: false });
+
+            // Show session info
+            this.emit('ui:session_info_updated', { sessionId: serverState.session_id, visible: true });
+
             // Emit event for other modules
             this.emit('recording:state_synced', serverState);
         } else {
             this.setState('isRecording', false);
+            this.setState('isPaused', false);
             this.setState('sessionId', null);
             this.setState('startTime', null);
             this.setState('status', 'ready');
 
             this.stopDurationTimer();
+
+            // Update UI status and button states to match monolithic behavior
+            this.emit('ui:status_updated', { status: 'ready', message: 'Ready' });
+            this.emit('ui:button_state_updated', { buttonId: 'startBtn', disabled: false });
+            this.emit('ui:button_state_updated', { buttonId: 'stopBtn', disabled: true });
+            this.emit('ui:button_state_updated', { buttonId: 'processLLMBtn', disabled: true });
+            this.emit('ui:button_state_updated', { buttonId: 'pauseBtn', disabled: true });
+            this.emit('ui:button_state_updated', { buttonId: 'resumeBtn', disabled: true });
+
+            // Hide session info
+            this.emit('ui:session_info_updated', { visible: false });
 
             // Emit event for other modules
             this.emit('recording:state_synced', serverState);
@@ -724,6 +776,41 @@ class RecordingModule extends ModuleBase {
      */
     getDuration() {
         return this.getState('duration');
+    }
+
+    /**
+     * Recover server state on initialization (matches monolithic app behavior)
+     */
+    async recoverServerState() {
+        try {
+            console.log('🔄 Recovering server state...');
+            const response = await fetch('/api/status');
+            const serverState = await response.json();
+
+            console.log('📊 Server state:', serverState);
+
+            if (serverState.is_recording) {
+                console.log('✅ Server is recording, syncing client state');
+
+                // Sync recording state (this will set all button states correctly)
+                this.updateRecordingState(serverState);
+
+                // Emit events for other modules to restore their state
+                this.emit('recording:state_recovered', serverState);
+
+                // Show notification
+                this.emit('ui:notification', {
+                    type: 'info',
+                    message: 'Synchronized with ongoing recording session'
+                });
+            } else {
+                console.log('ℹ️ Server is not recording, client state is correct');
+            }
+
+        } catch (error) {
+            console.error('❌ Failed to recover server state:', error);
+            // Don't throw - this is not critical for app functionality
+        }
     }
 }
 
