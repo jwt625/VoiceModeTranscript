@@ -385,7 +385,7 @@ class DeviceModule extends ModuleBase {
     /**
      * Set device selection programmatically
      */
-    setDeviceSelection(micDeviceId, systemDeviceId) {
+    setDeviceSelection(micDeviceId, systemDeviceId, triggerEvent = false) {
         if (this.elements.micDeviceSelect && micDeviceId !== undefined) {
             this.elements.micDeviceSelect.value = micDeviceId || '';
         }
@@ -394,7 +394,10 @@ class DeviceModule extends ModuleBase {
             this.elements.systemDeviceSelect.value = systemDeviceId || '';
         }
 
-        this.onDeviceSelectionChange();
+        // Only trigger the change event if explicitly requested
+        if (triggerEvent) {
+            this.onDeviceSelectionChange();
+        }
     }
 
     /**
@@ -416,7 +419,8 @@ class DeviceModule extends ModuleBase {
      */
     handleDeviceSelectionChange(data) {
         if (data.microphone !== undefined || data.system !== undefined) {
-            this.setDeviceSelection(data.microphone, data.system);
+            // Set device selection without triggering the change event to prevent loops
+            this.setDeviceSelection(data.microphone, data.system, false);
         }
     }
 }
