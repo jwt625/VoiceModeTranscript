@@ -57,6 +57,14 @@ class TranscriptModule extends ModuleBase {
         this.setupEventListeners();
         this.initializePlaceholders();
 
+        // Debug: Check state initialization
+        const rawTranscripts = this.getState('rawTranscripts');
+        const processedTranscripts = this.getState('processedTranscripts');
+        console.log('🔧 Transcript module state check:', {
+            rawTranscripts: Array.isArray(rawTranscripts) ? `Array[${rawTranscripts.length}]` : typeof rawTranscripts,
+            processedTranscripts: Array.isArray(processedTranscripts) ? `Array[${processedTranscripts.length}]` : typeof processedTranscripts
+        });
+
         if (this.debugMode) {
             console.log('🔧 Transcript module initialized');
         }
@@ -165,8 +173,13 @@ class TranscriptModule extends ModuleBase {
         // Extract transcript data
         const transcriptData = data.data || data;
 
-        // Add to state
-        const rawTranscripts = this.getState('rawTranscripts');
+        // Add to state with safety check
+        let rawTranscripts = this.getState('rawTranscripts');
+        if (!Array.isArray(rawTranscripts)) {
+            console.warn('⚠️ rawTranscripts state is not an array, reinitializing...');
+            rawTranscripts = [];
+            this.setState('rawTranscripts', rawTranscripts, { notify: false });
+        }
         rawTranscripts.push(transcriptData);
         this.setState('rawTranscripts', rawTranscripts);
 
@@ -209,8 +222,13 @@ class TranscriptModule extends ModuleBase {
         // Remove placeholder if it exists
         this.clearProcessedTranscriptPlaceholder();
 
-        // Add to state
-        const processedTranscripts = this.getState('processedTranscripts');
+        // Add to state with safety check
+        let processedTranscripts = this.getState('processedTranscripts');
+        if (!Array.isArray(processedTranscripts)) {
+            console.warn('⚠️ processedTranscripts state is not an array, reinitializing...');
+            processedTranscripts = [];
+            this.setState('processedTranscripts', processedTranscripts, { notify: false });
+        }
         processedTranscripts.push(data);
         this.setState('processedTranscripts', processedTranscripts);
 
