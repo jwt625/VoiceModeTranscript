@@ -161,26 +161,29 @@ class RecordingModule extends ModuleBase {
                 }
             }
 
-            // Get device selection
-            const deviceSelection = this.getGlobalState('device.selectedMic');
-            const systemDeviceSelection = this.getGlobalState('device.selectedSystem');
+            // Prepare device selection data - read directly from dropdowns (like original app)
+            const micDeviceSelect = document.getElementById('mic-device-select');
+            const systemDeviceSelect = document.getElementById('system-device-select');
 
-            // Prepare device data
+            const micDeviceId = micDeviceSelect?.value;
+            const systemDeviceId = systemDeviceSelect?.value;
+
+            console.log('🔍 Current dropdown values - Mic:', micDeviceId, 'System:', systemDeviceId);
+
             const deviceData = {};
-            if (deviceSelection) {
-                deviceData.mic_device_id = parseInt(deviceSelection);
+            if (micDeviceId) {
+                deviceData.mic_device_id = parseInt(micDeviceId);
             }
-            if (systemDeviceSelection) {
-                if (systemDeviceSelection.startsWith('output_')) {
-                    deviceData.system_device_id = parseInt(systemDeviceSelection.replace('output_', ''));
-                    deviceData.is_output_device = true;
+            if (systemDeviceId) {
+                // Don't parse output device IDs (they're strings like "output_3")
+                if (systemDeviceId.startsWith('output_')) {
+                    deviceData.system_device_id = systemDeviceId;
                 } else {
-                    deviceData.system_device_id = parseInt(systemDeviceSelection);
-                    deviceData.is_output_device = false;
+                    deviceData.system_device_id = parseInt(systemDeviceId);
                 }
             }
 
-            console.log('🎤 Starting recording with device data:', deviceData);
+            console.log('🔍 Device data being sent:', deviceData);
 
             // Make API call to start recording
             const response = await fetch('/api/start', {
