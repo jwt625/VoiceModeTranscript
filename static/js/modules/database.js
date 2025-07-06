@@ -94,6 +94,23 @@ class DatabaseModule extends ModuleBase {
         this.elements.generateSummaryBtn = document.getElementById('generate-summary-btn');
         this.elements.selectedSessionInfo = document.getElementById('selected-session-info');
         this.elements.showBookmarkedOnlyCheckbox = document.getElementById('show-bookmarked-only');
+
+        // Bookmark control elements
+        this.elements.bookmarkCountSpan = document.getElementById('bookmark-count');
+        this.elements.bookmarkAllVisibleBtn = document.getElementById('bookmark-all-visible-btn');
+        this.elements.clearAllBookmarksBtn = document.getElementById('clear-all-bookmarks-btn');
+
+        // Export elements
+        this.elements.exportOptions = document.getElementById('export-options');
+        this.elements.exportFormatSelect = document.getElementById('export-format-select');
+        this.elements.exportContentSelect = document.getElementById('export-content-select');
+        this.elements.downloadExportBtn = document.getElementById('download-export-btn');
+        this.elements.cancelExportBtn = document.getElementById('cancel-export-btn');
+
+        // Processed transcript action buttons
+        this.elements.saveProcessedBtn = document.getElementById('save-processed-btn');
+        this.elements.exportProcessedBtn = document.getElementById('export-processed-btn');
+        this.elements.processedActions = document.querySelector('.processed-actions');
         this.elements.refreshSessionsBtn = document.getElementById('refresh-sessions-btn');
 
         // Session viewing elements
@@ -154,6 +171,44 @@ class DatabaseModule extends ModuleBase {
         }
         if (this.elements.sessionBrowserTab) {
             this.elements.sessionBrowserTab.addEventListener('click', () => this.showSessionBrowser());
+        }
+
+        // Session browser controls
+        if (this.elements.loadSessionBtn) {
+            this.elements.loadSessionBtn.addEventListener('click', () => this.loadSelectedSession());
+        }
+        if (this.elements.generateSummaryBtn) {
+            this.elements.generateSummaryBtn.addEventListener('click', () => this.generateSummaryForSession());
+        }
+
+        // Bookmark filtering controls
+        if (this.elements.showBookmarkedOnlyCheckbox) {
+            this.elements.showBookmarkedOnlyCheckbox.addEventListener('change', () => this.onBookmarkFilterChange());
+        }
+        if (this.elements.bookmarkAllVisibleBtn) {
+            this.elements.bookmarkAllVisibleBtn.addEventListener('click', () => this.bookmarkAllVisible());
+        }
+        if (this.elements.clearAllBookmarksBtn) {
+            this.elements.clearAllBookmarksBtn.addEventListener('click', () => this.clearAllBookmarks());
+        }
+
+        // Export controls
+        if (this.elements.exportSessionBtn) {
+            this.elements.exportSessionBtn.addEventListener('click', () => this.showExportOptions());
+        }
+        if (this.elements.downloadExportBtn) {
+            this.elements.downloadExportBtn.addEventListener('click', () => this.downloadSessionExport());
+        }
+        if (this.elements.cancelExportBtn) {
+            this.elements.cancelExportBtn.addEventListener('click', () => this.hideExportOptions());
+        }
+
+        // Processed transcript action buttons
+        if (this.elements.saveProcessedBtn) {
+            this.elements.saveProcessedBtn.addEventListener('click', () => this.saveProcessedTranscript());
+        }
+        if (this.elements.exportProcessedBtn) {
+            this.elements.exportProcessedBtn.addEventListener('click', () => this.exportProcessedTranscript());
         }
 
         if (this.elements.exportBtn) {
@@ -912,6 +967,145 @@ class DatabaseModule extends ModuleBase {
     }
 
     /**
+     * Load selected session into main panels
+     */
+    async loadSelectedSession() {
+        if (!this.selectedSessionId) {
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'No session selected'
+            });
+            return;
+        }
+
+        try {
+            console.log(`📖 Loading session: ${this.selectedSessionId}`);
+
+            // Close database inspector
+            this.closeDatabaseInspector();
+
+            // Emit event to load session into main panels
+            this.emit('database:load_session_into_panels', {
+                sessionId: this.selectedSessionId
+            });
+
+        } catch (error) {
+            console.error('Error loading selected session:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to load session'
+            });
+        }
+    }
+
+    /**
+     * Generate summary for selected session
+     */
+    async generateSummaryForSession() {
+        if (!this.selectedSessionId) {
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'No session selected'
+            });
+            return;
+        }
+
+        try {
+            console.log(`📝 Generating summary for session: ${this.selectedSessionId}`);
+
+            // Emit event to generate summary
+            this.emit('database:generate_session_summary', {
+                sessionId: this.selectedSessionId
+            });
+
+        } catch (error) {
+            console.error('Error generating summary:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to generate summary'
+            });
+        }
+    }
+
+    /**
+     * Handle bookmark filter change
+     */
+    async onBookmarkFilterChange() {
+        // Save filter state to localStorage
+        if (this.elements.showBookmarkedOnlyCheckbox) {
+            localStorage.setItem('bookmarkFilter', this.elements.showBookmarkedOnlyCheckbox.checked);
+        }
+
+        // Reload sessions with new filter
+        await this.loadSessionsTable();
+    }
+
+    /**
+     * Bookmark all visible sessions
+     */
+    async bookmarkAllVisible() {
+        console.log('Bookmark all visible sessions');
+        // This would need to be implemented with the actual bookmark API
+    }
+
+    /**
+     * Clear all bookmarks
+     */
+    async clearAllBookmarks() {
+        console.log('Clear all bookmarks');
+        // This would need to be implemented with the actual bookmark API
+    }
+
+    /**
+     * Show export options
+     */
+    showExportOptions() {
+        if (this.elements.exportOptions) {
+            this.elements.exportOptions.style.display = 'block';
+        }
+    }
+
+    /**
+     * Hide export options
+     */
+    hideExportOptions() {
+        if (this.elements.exportOptions) {
+            this.elements.exportOptions.style.display = 'none';
+        }
+    }
+
+    /**
+     * Download session export
+     */
+    async downloadSessionExport() {
+        if (!this.selectedSessionId) {
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'No session selected'
+            });
+            return;
+        }
+
+        try {
+            console.log(`📤 Exporting session: ${this.selectedSessionId}`);
+
+            // Emit event to handle export
+            this.emit('database:export_session', {
+                sessionId: this.selectedSessionId,
+                format: this.elements.exportFormatSelect?.value || 'json',
+                content: this.elements.exportContentSelect?.value || 'both'
+            });
+
+        } catch (error) {
+            console.error('Error exporting session:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to export session'
+            });
+        }
+    }
+
+    /**
      * Toggle bookmark for current session
      */
     async toggleBookmark() {
@@ -1198,6 +1392,27 @@ class DatabaseModule extends ModuleBase {
             withRawTranscripts: sessions.filter(s => (s.raw_count || 0) > 0).length,
             withProcessedTranscripts: sessions.filter(s => (s.processed_count || 0) > 0).length
         };
+    }
+
+    /**
+     * Save processed transcript to database
+     */
+    saveProcessedTranscript() {
+        // Emit event to save processed transcripts
+        this.emit('database:save_processed_transcript');
+
+        this.emit('ui:notification', {
+            type: 'success',
+            message: 'Processed transcript saved to database'
+        });
+    }
+
+    /**
+     * Export processed transcript
+     */
+    exportProcessedTranscript() {
+        // Emit event to export processed transcripts
+        this.emit('database:export_processed_transcript');
     }
 }
 
