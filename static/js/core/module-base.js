@@ -63,13 +63,10 @@ class ModuleBase {
             // Initialize module state
             await this.initializeState();
 
-            // Set up event listeners
-            this.setupEventListeners();
-
             // Set up state subscriptions
             this.setupStateSubscriptions();
 
-            // Perform module-specific initialization
+            // Perform module-specific initialization (including setupEventListeners)
             await this.onInitialize();
 
             this.isInitialized = true;

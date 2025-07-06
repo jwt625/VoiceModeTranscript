@@ -11,7 +11,7 @@
 
 ### File Size Breakdown
 - **Current database.js**: 1,770 lines
-- **Original monolithic app.js**: 3,397 lines  
+- **Original monolithic app.js**: 3,397 lines
 - **Percentage**: 52% of original size in ONE module
 - **Problem**: This is essentially creating a new monolithic file
 
@@ -56,7 +56,7 @@ The database module is currently handling:
 **Responsibilities**:
 - Database statistics loading
 - Raw transcript queries
-- Processed transcript queries  
+- Processed transcript queries
 - Basic session data access
 - Database connection management
 
@@ -84,7 +84,7 @@ The database module is currently handling:
 - `selectSession()`
 - `updateTabStates()`
 
-#### 3. Bookmark Module (`modules/bookmark.js`) - ~350 lines  
+#### 3. Bookmark Module (`modules/bookmark.js`) - ~350 lines
 **Purpose**: Bookmark functionality and management
 **Responsibilities**:
 - Individual session bookmarking
@@ -188,7 +188,7 @@ The database module is currently handling:
 ### New Dependency Structure:
 ```
 session-browser → database, ui, utils
-bookmark → database, ui, utils  
+bookmark → database, ui, utils
 export → database, ui, utils
 session-viewer → database, transcript, ui, utils
 database → ui, utils (core only)
