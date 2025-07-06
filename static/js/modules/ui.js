@@ -88,9 +88,13 @@ class UIModule extends ModuleBase {
         this.elements.clearBtn = document.getElementById('clear-btn');
         this.elements.processLLMBtn = document.getElementById('process-llm-btn');
 
-        // Panel toggle buttons
+        // Panel toggle buttons (in panel headers)
         this.elements.toggleRawBtn = document.getElementById('toggle-raw-btn');
         this.elements.toggleProcessedBtn = document.getElementById('toggle-processed-btn');
+
+        // Panel visibility control buttons (main controls)
+        this.elements.showRawBtn = document.getElementById('show-raw-btn');
+        this.elements.showProcessedBtn = document.getElementById('show-processed-btn');
         this.elements.showBothBtn = document.getElementById('show-both-btn');
 
         // Panel elements
@@ -117,7 +121,7 @@ class UIModule extends ModuleBase {
      * Set up button event listeners
      */
     setupButtonEventListeners() {
-        // Panel visibility controls
+        // Panel header toggle buttons
         if (this.elements.toggleRawBtn) {
             this.elements.toggleRawBtn.addEventListener('click', () => {
                 this.toggleRawPanelVisibility();
@@ -126,6 +130,19 @@ class UIModule extends ModuleBase {
 
         if (this.elements.toggleProcessedBtn) {
             this.elements.toggleProcessedBtn.addEventListener('click', () => {
+                this.toggleProcessedPanelVisibility();
+            });
+        }
+
+        // Main panel visibility control buttons
+        if (this.elements.showRawBtn) {
+            this.elements.showRawBtn.addEventListener('click', () => {
+                this.toggleRawPanelVisibility();
+            });
+        }
+
+        if (this.elements.showProcessedBtn) {
+            this.elements.showProcessedBtn.addEventListener('click', () => {
                 this.toggleProcessedPanelVisibility();
             });
         }
@@ -363,12 +380,34 @@ class UIModule extends ModuleBase {
         const rawVisible = this.getState('rawPanelVisible');
         const processedVisible = this.getState('processedPanelVisible');
 
-        // Update show both button text
+        // Update raw button active state
+        if (this.elements.showRawBtn) {
+            if (rawVisible) {
+                this.elements.showRawBtn.classList.add('active');
+            } else {
+                this.elements.showRawBtn.classList.remove('active');
+            }
+        }
+
+        // Update processed button active state
+        if (this.elements.showProcessedBtn) {
+            if (processedVisible) {
+                this.elements.showProcessedBtn.classList.add('active');
+            } else {
+                this.elements.showProcessedBtn.classList.remove('active');
+            }
+        }
+
+        // Update show both button text and state
         if (this.elements.showBothBtn) {
             if (rawVisible && processedVisible) {
-                this.elements.showBothBtn.textContent = '👁️ Hide Both';
+                this.elements.showBothBtn.textContent = '🙈 Hide Both';
+                this.elements.showBothBtn.title = 'Hide Both Panels';
+                this.elements.showBothBtn.classList.add('active');
             } else {
                 this.elements.showBothBtn.textContent = '👁️ Show Both';
+                this.elements.showBothBtn.title = 'Show Both Panels';
+                this.elements.showBothBtn.classList.remove('active');
             }
         }
     }

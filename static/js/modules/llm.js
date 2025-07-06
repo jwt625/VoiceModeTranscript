@@ -34,8 +34,8 @@ class LLMModule extends ModuleBase {
         return {
             isProcessing: false,
             currentJob: null,
-            autoProcessingEnabled: true,
-            autoProcessingInterval: 120000,
+            autoProcessingEnabled: true, // Default to true to match HTML
+            autoProcessingInterval: 120000, // Default to 2 minutes (2 * 60 * 1000)
             processingStartTime: null,
             queueStatus: {
                 pending: 0,
@@ -85,8 +85,8 @@ class LLMModule extends ModuleBase {
         this.on('llm:transcripts_available', (data) => this.handleTranscriptsAvailable(data));
 
         // Listen for recording events to manage auto-processing
-        this.on('recording:started', () => this.startAutoProcessing());
-        this.on('recording:stopped', () => this.stopAutoProcessing());
+        this.on('recording:started', () => this.handleRecordingStarted());
+        this.on('recording:stopped', () => this.handleRecordingStopped());
 
         // Listen for auto-processing control events
         this.on('llm:toggle_auto_processing', () => this.toggleAutoProcessing());
@@ -106,7 +106,7 @@ class LLMModule extends ModuleBase {
         this.elements.llmProcessingStatus = document.getElementById('llm-processing-status');
 
         // Auto-processing controls
-        this.elements.autoProcessingCheckbox = document.getElementById('auto-processing-checkbox');
+        this.elements.autoProcessingCheckbox = document.getElementById('auto-processing-enabled');
         this.elements.autoProcessingInterval = document.getElementById('auto-processing-interval');
         this.elements.autoProcessingStatus = document.getElementById('auto-processing-status');
 
@@ -130,15 +130,15 @@ class LLMModule extends ModuleBase {
         }
 
         if (this.elements.autoProcessingCheckbox) {
-            this.elements.autoProcessingCheckbox.addEventListener('change', () => {
-                this.emit('llm:toggle_auto_processing');
+            this.elements.autoProcessingCheckbox.addEventListener('change', async () => {
+                await this.toggleAutoProcessing();
             });
         }
 
         if (this.elements.autoProcessingInterval) {
-            this.elements.autoProcessingInterval.addEventListener('change', () => {
+            this.elements.autoProcessingInterval.addEventListener('change', async () => {
                 const interval = parseInt(this.elements.autoProcessingInterval.value);
-                this.emit('llm:set_auto_processing_interval', { interval });
+                await this.setAutoProcessingInterval(interval);
             });
         }
     }
@@ -146,16 +146,9 @@ class LLMModule extends ModuleBase {
     /**
      * Initialize auto-processing settings
      */
-    initializeAutoProcessing() {
-        // Set initial checkbox state
-        if (this.elements.autoProcessingCheckbox) {
-            this.elements.autoProcessingCheckbox.checked = this.getState('autoProcessingEnabled');
-        }
-
-        // Set initial interval
-        if (this.elements.autoProcessingInterval) {
-            this.elements.autoProcessingInterval.value = this.getState('autoProcessingInterval');
-        }
+    async initializeAutoProcessing() {
+        // Load settings from server first
+        await this.loadAutoProcessingSettings();
 
         // Update status display
         this.updateAutoProcessingStatus();
@@ -193,12 +186,18 @@ class LLMModule extends ModuleBase {
 
             console.log(`🤖 Starting manual LLM processing for ${rawCount} transcripts`);
 
+            // Get session ID from recording module
+            const sessionId = this.getGlobalState('recording.sessionId');
+
             // Make API call to process transcripts
             const response = await fetch('/api/process-llm', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify({
+                    session_id: sessionId
+                })
             });
 
             const result = await response.json();
@@ -481,62 +480,23 @@ class LLMModule extends ModuleBase {
     /**
      * Toggle auto-processing
      */
-    toggleAutoProcessing() {
+    async toggleAutoProcessing() {
         const currentState = this.getState('autoProcessingEnabled');
         const newState = !currentState;
 
-        this.setState('autoProcessingEnabled', newState);
-
-        if (this.elements.autoProcessingCheckbox) {
-            this.elements.autoProcessingCheckbox.checked = newState;
-        }
-
-        // Start or stop auto-processing based on recording state
-        const isRecording = this.getGlobalState('recording.isRecording');
-        if (newState && isRecording) {
-            this.startAutoProcessing();
-        } else {
-            this.stopAutoProcessing();
-        }
-
-        this.updateAutoProcessingStatus();
-
-        this.emit('ui:notification', {
-            type: 'info',
-            message: `Auto-processing ${newState ? 'enabled' : 'disabled'}`
-        });
-
-        if (this.debugMode) {
-            console.log(`🤖 Auto-processing ${newState ? 'enabled' : 'disabled'}`);
-        }
+        // Update server settings
+        await this.updateAutoProcessingSettings(newState, this.getState('autoProcessingInterval'));
     }
 
     /**
      * Set auto-processing interval
      */
-    setAutoProcessingInterval(interval) {
-        this.setState('autoProcessingInterval', interval);
+    async setAutoProcessingInterval(interval) {
+        // Convert from minutes to milliseconds if needed
+        const intervalMs = interval < 1000 ? interval * 60000 : interval;
 
-        if (this.elements.autoProcessingInterval) {
-            this.elements.autoProcessingInterval.value = interval;
-        }
-
-        // Restart auto-processing with new interval if it's currently running
-        if (this.autoProcessingTimer) {
-            this.startAutoProcessing();
-        }
-
-        this.updateAutoProcessingStatus();
-
-        const minutes = interval / 60000;
-        this.emit('ui:notification', {
-            type: 'info',
-            message: `Auto-processing interval set to ${minutes} minute${minutes !== 1 ? 's' : ''}`
-        });
-
-        if (this.debugMode) {
-            console.log(`🤖 Auto-processing interval set to ${interval}ms`);
-        }
+        // Update server settings
+        await this.updateAutoProcessingSettings(this.getState('autoProcessingEnabled'), intervalMs);
     }
 
     /**
@@ -546,18 +506,18 @@ class LLMModule extends ModuleBase {
         if (!this.elements.autoProcessingStatus) return;
 
         const enabled = this.getState('autoProcessingEnabled');
-        const interval = this.getState('autoProcessingInterval');
-        const isActive = !!this.autoProcessingTimer;
+        const intervalMs = this.getState('autoProcessingInterval');
+        const intervalMinutes = intervalMs / 60000;
+        const isRecording = this.getGlobalState('recording.isRecording');
 
         let statusText = '';
 
         if (!enabled) {
-            statusText = 'Disabled';
-        } else if (isActive) {
-            const minutes = interval / 60000;
-            statusText = `Active (every ${minutes}min)`;
+            statusText = '';
+        } else if (isRecording) {
+            statusText = `Next: ${intervalMinutes} min`;
         } else {
-            statusText = 'Enabled (waiting for recording)';
+            statusText = 'Will start with recording';
         }
 
         this.elements.autoProcessingStatus.textContent = statusText;
@@ -606,10 +566,20 @@ class LLMModule extends ModuleBase {
             console.log('🤖 Auto-processing triggered via SSE:', data);
         }
 
+        // Update status to show what was processed
+        if (this.elements.autoProcessingStatus) {
+            this.elements.autoProcessingStatus.textContent = `Auto-processed ${data.transcript_count} transcripts`;
+        }
+
         this.emit('ui:notification', {
             type: 'info',
-            message: 'Auto-processing triggered by server'
+            message: `Auto-processed ${data.transcript_count} transcripts`
         });
+
+        // Reset status after a few seconds
+        setTimeout(() => {
+            this.updateAutoProcessingStatus();
+        }, 3000);
     }
 
     /**
@@ -669,6 +639,34 @@ class LLMModule extends ModuleBase {
     }
 
     /**
+     * Handle recording started event
+     */
+    handleRecordingStarted() {
+        this.startAutoProcessing();
+        this.updateAutoProcessingStatus();
+
+        // Enable LLM processing button when recording starts
+        this.emit('ui:button_state_updated', {
+            buttonId: 'processLLMBtn',
+            disabled: false
+        });
+    }
+
+    /**
+     * Handle recording stopped event
+     */
+    handleRecordingStopped() {
+        this.stopAutoProcessing();
+        this.updateAutoProcessingStatus();
+
+        // Disable LLM processing button when recording stops (will be re-enabled by transcript availability)
+        this.emit('ui:button_state_updated', {
+            buttonId: 'processLLMBtn',
+            disabled: true
+        });
+    }
+
+    /**
      * Get auto-processing settings
      */
     getAutoProcessingSettings() {
@@ -677,6 +675,113 @@ class LLMModule extends ModuleBase {
             interval: this.getState('autoProcessingInterval'),
             isActive: !!this.autoProcessingTimer
         };
+    }
+
+    /**
+     * Load auto-processing settings from server
+     */
+    async loadAutoProcessingSettings() {
+        try {
+            const response = await fetch('/api/auto-processing/settings');
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+
+                // Update state
+                this.setState('autoProcessingEnabled', settings.enabled);
+                this.setState('autoProcessingInterval', settings.interval_minutes * 60000); // Convert to ms
+
+                // Update UI elements
+                if (this.elements.autoProcessingCheckbox) {
+                    this.elements.autoProcessingCheckbox.checked = settings.enabled;
+                }
+                if (this.elements.autoProcessingInterval) {
+                    this.elements.autoProcessingInterval.value = settings.interval_minutes;
+                    this.elements.autoProcessingInterval.disabled = !settings.enabled;
+                }
+
+                this.updateAutoProcessingStatus();
+
+                if (this.debugMode) {
+                    console.log('🤖 Auto-processing settings loaded:', settings);
+                }
+            } else {
+                console.error('Failed to load auto-processing settings:', result.error);
+            }
+        } catch (error) {
+            console.error('Error loading auto-processing settings:', error);
+        }
+    }
+
+    /**
+     * Update auto-processing settings on server
+     */
+    async updateAutoProcessingSettings(enabled, intervalMs) {
+        try {
+            const intervalMinutes = Math.round(intervalMs / 60000);
+
+            // Enable/disable interval dropdown
+            if (this.elements.autoProcessingInterval) {
+                this.elements.autoProcessingInterval.disabled = !enabled;
+            }
+
+            const response = await fetch('/api/auto-processing/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    enabled: enabled,
+                    interval_minutes: intervalMinutes
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+
+                // Update local state
+                this.setState('autoProcessingEnabled', settings.enabled);
+                this.setState('autoProcessingInterval', settings.interval_minutes * 60000);
+
+                // Update UI elements
+                if (this.elements.autoProcessingCheckbox) {
+                    this.elements.autoProcessingCheckbox.checked = settings.enabled;
+                }
+                if (this.elements.autoProcessingInterval) {
+                    this.elements.autoProcessingInterval.value = settings.interval_minutes;
+                }
+
+                // Start or stop auto-processing based on recording state
+                const isRecording = this.getGlobalState('recording.isRecording');
+                if (settings.enabled && isRecording) {
+                    this.startAutoProcessing();
+                } else {
+                    this.stopAutoProcessing();
+                }
+
+                this.updateAutoProcessingStatus();
+
+                this.emit('ui:notification', {
+                    type: 'info',
+                    message: `Auto-processing ${settings.enabled ? 'enabled' : 'disabled'}`
+                });
+
+                if (this.debugMode) {
+                    console.log('🤖 Auto-processing settings updated:', settings);
+                }
+            } else {
+                throw new Error(result.error || 'Failed to update settings');
+            }
+        } catch (error) {
+            console.error('Error updating auto-processing settings:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to update auto-processing settings'
+            });
+        }
     }
 }
 

@@ -77,7 +77,7 @@ class DatabaseModule extends ModuleBase {
      */
     initializeElements() {
         // Session browser elements
-        this.elements.sessionBrowserBtn = document.getElementById('session-browser-btn');
+        this.elements.sessionBrowserBtn = document.getElementById('database-btn');
         this.elements.sessionModal = document.getElementById('session-modal');
         this.elements.sessionList = document.getElementById('session-list');
         this.elements.closeSessionModalBtn = document.getElementById('close-session-modal');

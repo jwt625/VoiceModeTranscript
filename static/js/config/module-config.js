@@ -51,7 +51,9 @@ const MODULE_DEFINITIONS = {
         dependencies: ['utils'],
         config: {
             audioLevelUpdateInterval: 100,
-            deviceRefreshInterval: 30000
+            deviceRefreshInterval: 30000,
+            autoSelectAirPods: true,
+            autoSelectBlackHole: true
         }
     },
 

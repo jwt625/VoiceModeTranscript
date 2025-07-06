@@ -193,8 +193,14 @@ class DeviceModule extends ModuleBase {
             option.value = device.id;
             option.textContent = device.name;
 
-            // Auto-select AirPods Pro if available and config allows
-            if (this.config.autoSelectAirPods && device.name.toLowerCase().includes('airpods')) {
+            // Auto-select AirPods Pro if available
+            if (device.name.toLowerCase().includes('airpods')) {
+                option.selected = true;
+                this.selectedMicDevice = device.id;
+                this.setState('selectedMic', device.id);
+            }
+            // Auto-select BlackHole if available and no AirPods selected
+            else if (device.name.toLowerCase().includes('blackhole') && !this.elements.micDeviceSelect.querySelector('option[selected]')) {
                 option.selected = true;
                 this.selectedMicDevice = device.id;
                 this.setState('selectedMic', device.id);
@@ -231,8 +237,8 @@ class DeviceModule extends ModuleBase {
                 option.value = device.id;
                 option.textContent = `${device.name} (Loopback Input)`;
 
-                // Auto-select BlackHole if available and config allows
-                if (this.config.autoSelectBlackHole && deviceName.includes('blackhole')) {
+                // Auto-select BlackHole if available
+                if (deviceName.includes('blackhole')) {
                     option.selected = true;
                     this.selectedSystemDevice = device.id;
                     this.setState('selectedSystem', device.id);
@@ -256,9 +262,7 @@ class DeviceModule extends ModuleBase {
 
             // Auto-select AirPods Pro if no loopback device was selected
             const deviceName = device.name.toLowerCase();
-            if (this.config.autoSelectAirPods &&
-                deviceName.includes('airpods') &&
-                !this.elements.systemDeviceSelect.querySelector('option[selected]')) {
+            if (deviceName.includes('airpods') && !this.elements.systemDeviceSelect.querySelector('option[selected]')) {
                 option.selected = true;
                 this.selectedSystemDevice = `output_${device.id}`;
                 this.setState('selectedSystem', `output_${device.id}`);

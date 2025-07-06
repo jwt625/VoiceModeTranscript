@@ -183,7 +183,10 @@ class RecordingModule extends ModuleBase {
                 }
             }
 
+            // TEMPORARY DEBUG: If no devices selected, let server auto-detect
+            // This matches the monolithic behavior where empty deviceData is sent
             console.log('🔍 Device data being sent:', deviceData);
+            console.log('🔍 Will let server auto-detect devices if empty');
 
             // Make API call to start recording
             const response = await fetch('/api/start', {
@@ -204,7 +207,21 @@ class RecordingModule extends ModuleBase {
 
                 console.log('Recording started:', result);
             } else {
-                throw new Error(result.error || 'Failed to start recording');
+                // Don't immediately fail - wait for SSE confirmation
+                // The server might have partial success (e.g., system audio works but mic fails)
+                console.warn('API start failed, but waiting for SSE confirmation:', result.error);
+
+                this.emit('ui:notification', {
+                    type: 'warning',
+                    message: 'Recording may have started with limited functionality: ' + (result.error || 'Unknown error')
+                });
+
+                // Set a timeout to fail if no SSE confirmation comes
+                this.startConfirmationTimeout = setTimeout(() => {
+                    if (!this.getState('isRecording')) {
+                        this.handleRecordingError(result.error || 'Failed to start recording');
+                    }
+                }, 5000); // Wait 5 seconds for SSE confirmation
             }
 
         } catch (error) {
@@ -384,6 +401,12 @@ class RecordingModule extends ModuleBase {
      * Handle recording started
      */
     handleRecordingStarted(data) {
+        // Clear any pending confirmation timeout
+        if (this.startConfirmationTimeout) {
+            clearTimeout(this.startConfirmationTimeout);
+            this.startConfirmationTimeout = null;
+        }
+
         this.setState('isRecording', true);
         this.setState('isPaused', false);
         this.setState('sessionId', data.session_id);
