@@ -86,6 +86,14 @@ class DatabaseModule extends ModuleBase {
         this.elements.processedTab = document.getElementById('processed-tab');
         this.elements.sessionsTab = document.getElementById('sessions-tab');
         this.elements.sessionBrowserTab = document.getElementById('session-browser-tab');
+
+        // Session browser elements
+        this.elements.sessionBrowserControls = document.getElementById('session-browser-controls');
+        this.elements.loadSessionBtn = document.getElementById('load-session-btn');
+        this.elements.exportSessionBtn = document.getElementById('export-session-btn');
+        this.elements.generateSummaryBtn = document.getElementById('generate-summary-btn');
+        this.elements.selectedSessionInfo = document.getElementById('selected-session-info');
+        this.elements.showBookmarkedOnlyCheckbox = document.getElementById('show-bookmarked-only');
         this.elements.refreshSessionsBtn = document.getElementById('refresh-sessions-btn');
 
         // Session viewing elements
@@ -132,6 +140,20 @@ class DatabaseModule extends ModuleBase {
             this.elements.exitSessionViewingBtn.addEventListener('click', () => {
                 this.emit('database:exit_session_viewing');
             });
+        }
+
+        // Tab click listeners
+        if (this.elements.rawTab) {
+            this.elements.rawTab.addEventListener('click', () => this.showDatabaseTable('raw'));
+        }
+        if (this.elements.processedTab) {
+            this.elements.processedTab.addEventListener('click', () => this.showDatabaseTable('processed'));
+        }
+        if (this.elements.sessionsTab) {
+            this.elements.sessionsTab.addEventListener('click', () => this.showDatabaseTable('sessions'));
+        }
+        if (this.elements.sessionBrowserTab) {
+            this.elements.sessionBrowserTab.addEventListener('click', () => this.showSessionBrowser());
         }
 
         if (this.elements.exportBtn) {
@@ -476,17 +498,30 @@ class DatabaseModule extends ModuleBase {
      * Update tab states
      */
     updateTabStates(activeTab) {
-        const tabs = ['raw', 'processed', 'sessions', 'session-browser'];
-        tabs.forEach(tab => {
-            const tabElement = this.elements[`${tab.replace('-', '')}Tab`];
-            if (tabElement) {
-                if (tab === activeTab) {
-                    tabElement.classList.add('active');
-                } else {
-                    tabElement.classList.remove('active');
-                }
-            }
-        });
+        // Remove active class from all tabs
+        if (this.elements.rawTab) this.elements.rawTab.classList.remove('active');
+        if (this.elements.processedTab) this.elements.processedTab.classList.remove('active');
+        if (this.elements.sessionsTab) this.elements.sessionsTab.classList.remove('active');
+        if (this.elements.sessionBrowserTab) this.elements.sessionBrowserTab.classList.remove('active');
+
+        // Add active class to the selected tab and manage session browser controls
+        switch (activeTab) {
+            case 'raw':
+                if (this.elements.rawTab) this.elements.rawTab.classList.add('active');
+                if (this.elements.sessionBrowserControls) this.elements.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'processed':
+                if (this.elements.processedTab) this.elements.processedTab.classList.add('active');
+                if (this.elements.sessionBrowserControls) this.elements.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'sessions':
+                if (this.elements.sessionsTab) this.elements.sessionsTab.classList.add('active');
+                if (this.elements.sessionBrowserControls) this.elements.sessionBrowserControls.style.display = 'none';
+                break;
+            case 'session-browser':
+                if (this.elements.sessionBrowserTab) this.elements.sessionBrowserTab.classList.add('active');
+                break;
+        }
     }
 
     /**
@@ -535,21 +570,345 @@ class DatabaseModule extends ModuleBase {
     }
 
     /**
-     * Load processed transcripts (placeholder)
+     * Load processed transcripts
      */
     async loadProcessedTranscripts() {
-        if (this.elements.tableContent) {
-            this.elements.tableContent.innerHTML = '<p>Processed transcripts view not implemented yet</p>';
+        try {
+            const response = await fetch('/api/database/processed-transcripts?limit=10');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayProcessedTranscripts(result.transcripts, result.pagination);
+            } else {
+                throw new Error(result.error || 'Failed to load processed transcripts');
+            }
+        } catch (error) {
+            console.error('Error loading processed transcripts:', error);
+            if (this.elements.tableContent) {
+                this.elements.tableContent.innerHTML = '<p>Error loading processed transcripts</p>';
+            }
         }
     }
 
     /**
-     * Load recent sessions (placeholder)
+     * Display processed transcripts
+     */
+    displayProcessedTranscripts(transcripts, pagination) {
+        if (!this.elements.tableContent) return;
+
+        if (transcripts.length === 0) {
+            this.elements.tableContent.innerHTML = '<p>No processed transcripts found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Processed Text</th>
+                        <th>Original Count</th>
+                        <th>LLM Model</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transcripts.map(t => `
+                        <tr>
+                            <td class="text-truncate">${t.session_id}</td>
+                            <td class="text-truncate">${t.processed_text}</td>
+                            <td>${t.original_transcript_count}</td>
+                            <td>${t.llm_model}</td>
+                            <td>${new Date(t.timestamp).toLocaleString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div style="margin-top: 15px; text-align: center; color: #8e8e93;">
+                Showing ${transcripts.length} of ${pagination.total_count} processed transcripts
+            </div>
+        `;
+
+        this.elements.tableContent.innerHTML = tableHtml;
+    }
+
+    /**
+     * Load recent sessions
      */
     async loadRecentSessions() {
-        if (this.elements.tableContent) {
-            this.elements.tableContent.innerHTML = '<p>Recent sessions view not implemented yet</p>';
+        try {
+            const response = await fetch('/api/database/stats');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayRecentSessions(result.recent_sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load sessions');
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            if (this.elements.tableContent) {
+                this.elements.tableContent.innerHTML = '<p>Error loading sessions</p>';
+            }
         }
+    }
+
+    /**
+     * Display recent sessions
+     */
+    displayRecentSessions(sessions) {
+        if (!this.elements.tableContent) return;
+
+        if (sessions.length === 0) {
+            this.elements.tableContent.innerHTML = '<p>No recent sessions found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Transcript Count</th>
+                        <th>First Transcript</th>
+                        <th>Last Transcript</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sessions.map(s => {
+                        const start = new Date(s.first_transcript);
+                        const end = new Date(s.last_transcript);
+                        const duration = Math.round((end - start) / 1000 / 60); // minutes
+                        return `
+                            <tr>
+                                <td class="text-truncate">${s.session_id}</td>
+                                <td>${s.transcript_count}</td>
+                                <td>${start.toLocaleString()}</td>
+                                <td>${end.toLocaleString()}</td>
+                                <td>${duration} min</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+
+        this.elements.tableContent.innerHTML = tableHtml;
+    }
+
+    /**
+     * Show session browser
+     */
+    async showSessionBrowser() {
+        // Update tab states
+        this.updateTabStates('session-browser');
+
+        // Show session browser controls
+        if (this.elements.sessionBrowserControls) {
+            this.elements.sessionBrowserControls.style.display = 'block';
+        }
+
+        // Restore bookmark filter state from localStorage
+        if (this.elements.showBookmarkedOnlyCheckbox) {
+            const savedFilter = localStorage.getItem('bookmarkFilter');
+            if (savedFilter !== null) {
+                this.elements.showBookmarkedOnlyCheckbox.checked = savedFilter === 'true';
+            }
+        }
+
+        // Reset selection state
+        this.selectedSessionId = null;
+        if (this.elements.loadSessionBtn) {
+            this.elements.loadSessionBtn.disabled = true;
+        }
+        if (this.elements.exportSessionBtn) {
+            this.elements.exportSessionBtn.disabled = true;
+        }
+        if (this.elements.generateSummaryBtn) {
+            this.elements.generateSummaryBtn.disabled = true;
+        }
+        if (this.elements.selectedSessionInfo) {
+            this.elements.selectedSessionInfo.textContent = 'No session selected';
+        }
+
+        // Load sessions
+        await this.loadSessionsTable();
+    }
+
+    /**
+     * Load sessions table for session browser
+     */
+    async loadSessionsTable(bookmarkedOnly = null) {
+        try {
+            // Use the checkbox state if no explicit filter provided
+            if (bookmarkedOnly === null && this.elements.showBookmarkedOnlyCheckbox) {
+                bookmarkedOnly = this.elements.showBookmarkedOnlyCheckbox.checked;
+            }
+
+            // Build URL with filter parameter
+            let url = '/api/sessions';
+            if (bookmarkedOnly === true) {
+                url += '?bookmarked=true';
+            }
+            // When bookmarkedOnly is false or null, don't add any filter to show ALL sessions
+
+            const response = await fetch(url);
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displaySelectableSessions(result.sessions);
+                this.updateBookmarkCount(result.sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load sessions');
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            if (this.elements.tableContent) {
+                this.elements.tableContent.innerHTML = '<p>Error loading sessions</p>';
+            }
+        }
+    }
+
+    /**
+     * Display selectable sessions for session browser
+     */
+    displaySelectableSessions(sessions) {
+        if (!this.elements.tableContent) return;
+
+        if (sessions.length === 0) {
+            this.elements.tableContent.innerHTML = '<p>No sessions found</p>';
+            return;
+        }
+
+        const tableHtml = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Bookmark</th>
+                        <th>Session ID</th>
+                        <th>Summary</th>
+                        <th>Keywords</th>
+                        <th>Raw Transcripts</th>
+                        <th>Processed Transcripts</th>
+                        <th>Start Time</th>
+                        <th>Audio Sources</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sessions.map(session => `
+                        <tr class="selectable" data-session-id="${session.session_id}">
+                            <td class="bookmark-cell">
+                                <span class="bookmark-star ${session.bookmarked ? 'bookmarked' : ''}"
+                                      data-session-id="${session.session_id}"
+                                      title="${session.bookmarked ? 'Remove bookmark' : 'Add bookmark'}">
+                                    ${session.bookmarked ? '★' : '☆'}
+                                </span>
+                            </td>
+                            <td class="text-truncate">${session.display_name}</td>
+                            <td class="summary-cell" title="${session.summary || 'No summary available'}">
+                                ${session.summary ?
+                                    `<span class="summary-text">${session.summary.length > 80 ? session.summary.substring(0, 80) + '...' : session.summary}</span>` :
+                                    '<span class="no-summary">No summary</span>'
+                                }
+                            </td>
+                            <td class="keywords-cell">
+                                ${session.keywords && session.keywords.length > 0 ?
+                                    session.keywords.map(keyword => `<span class="keyword-tag">${keyword}</span>`).join(' ') :
+                                    '<span class="no-keywords">No keywords</span>'
+                                }
+                            </td>
+                            <td>${session.raw_transcript_count}</td>
+                            <td>${session.processed_transcript_count}</td>
+                            <td>${new Date(session.start_time).toLocaleString()}</td>
+                            <td>${session.audio_sources}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        this.elements.tableContent.innerHTML = tableHtml;
+
+        // Add click listeners for session selection
+        this.setupSessionClickListeners();
+    }
+
+    /**
+     * Update bookmark count display
+     */
+    updateBookmarkCount(sessions) {
+        if (!this.elements.bookmarkCountSpan) return;
+
+        const bookmarkedCount = sessions.filter(s => s.bookmarked).length;
+        this.elements.bookmarkCountSpan.textContent = `(${bookmarkedCount} bookmarked)`;
+    }
+
+    /**
+     * Setup click listeners for session rows
+     */
+    setupSessionClickListeners() {
+        if (!this.elements.tableContent) return;
+
+        const sessionRows = this.elements.tableContent.querySelectorAll('tr.selectable');
+        sessionRows.forEach(row => {
+            row.addEventListener('click', (e) => {
+                // Don't select if clicking on bookmark star
+                if (e.target.classList.contains('bookmark-star')) {
+                    return;
+                }
+                this.selectSession(row);
+            });
+        });
+
+        // Add bookmark star click listeners
+        const bookmarkStars = this.elements.tableContent.querySelectorAll('.bookmark-star');
+        bookmarkStars.forEach(star => {
+            star.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleSessionBookmark(star.dataset.sessionId);
+            });
+        });
+    }
+
+    /**
+     * Select a session row
+     */
+    selectSession(row) {
+        // Remove previous selection
+        if (this.elements.tableContent) {
+            this.elements.tableContent.querySelectorAll('tr.selected').forEach(r => {
+                r.classList.remove('selected');
+            });
+        }
+
+        // Add selection to clicked row
+        row.classList.add('selected');
+        this.selectedSessionId = row.dataset.sessionId;
+
+        // Enable action buttons
+        if (this.elements.loadSessionBtn) {
+            this.elements.loadSessionBtn.disabled = false;
+        }
+        if (this.elements.exportSessionBtn) {
+            this.elements.exportSessionBtn.disabled = false;
+        }
+        if (this.elements.generateSummaryBtn) {
+            this.elements.generateSummaryBtn.disabled = false;
+        }
+
+        // Update selected session info
+        if (this.elements.selectedSessionInfo) {
+            this.elements.selectedSessionInfo.textContent = `Selected: ${this.selectedSessionId.replace('session_', '')}`;
+        }
+    }
+
+    /**
+     * Toggle session bookmark (placeholder for now)
+     */
+    async toggleSessionBookmark(sessionId) {
+        console.log('Toggle bookmark for session:', sessionId);
+        // This would need to be implemented with the actual bookmark API
     }
 
     /**
