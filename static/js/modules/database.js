@@ -76,11 +76,16 @@ class DatabaseModule extends ModuleBase {
      * Initialize DOM elements
      */
     initializeElements() {
-        // Session browser elements
+        // Database inspector elements
         this.elements.sessionBrowserBtn = document.getElementById('database-btn');
-        this.elements.sessionModal = document.getElementById('session-modal');
-        this.elements.sessionList = document.getElementById('session-list');
-        this.elements.closeSessionModalBtn = document.getElementById('close-session-modal');
+        this.elements.databaseModal = document.getElementById('database-modal');
+        this.elements.closeModalBtn = document.getElementById('close-modal-btn');
+        this.elements.statsGrid = document.getElementById('stats-grid');
+        this.elements.tableContent = document.getElementById('table-content');
+        this.elements.rawTab = document.getElementById('raw-tab');
+        this.elements.processedTab = document.getElementById('processed-tab');
+        this.elements.sessionsTab = document.getElementById('sessions-tab');
+        this.elements.sessionBrowserTab = document.getElementById('session-browser-tab');
         this.elements.refreshSessionsBtn = document.getElementById('refresh-sessions-btn');
 
         // Session viewing elements
@@ -107,13 +112,13 @@ class DatabaseModule extends ModuleBase {
     setupDOMEventListeners() {
         if (this.elements.sessionBrowserBtn) {
             this.elements.sessionBrowserBtn.addEventListener('click', () => {
-                this.openSessionBrowser();
+                this.openDatabaseInspector();
             });
         }
 
-        if (this.elements.closeSessionModalBtn) {
-            this.elements.closeSessionModalBtn.addEventListener('click', () => {
-                this.closeSessionBrowser();
+        if (this.elements.closeModalBtn) {
+            this.elements.closeModalBtn.addEventListener('click', () => {
+                this.closeDatabaseInspector();
             });
         }
 
@@ -372,23 +377,178 @@ class DatabaseModule extends ModuleBase {
     }
 
     /**
-     * Open session browser
+     * Open database inspector
      */
-    openSessionBrowser() {
-        if (this.elements.sessionModal) {
-            this.elements.sessionModal.style.display = 'block';
-        }
+    async openDatabaseInspector() {
+        try {
+            if (this.elements.databaseModal) {
+                this.elements.databaseModal.style.display = 'flex';
+            }
 
-        // Refresh sessions when opening
-        this.loadSessions();
+            // Load database stats
+            await this.loadDatabaseStats();
+
+            // Show raw transcripts by default
+            await this.showDatabaseTable('raw');
+
+        } catch (error) {
+            console.error('Error opening database inspector:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to load database information'
+            });
+        }
     }
 
     /**
-     * Close session browser
+     * Close database inspector
      */
-    closeSessionBrowser() {
-        if (this.elements.sessionModal) {
-            this.elements.sessionModal.style.display = 'none';
+    closeDatabaseInspector() {
+        if (this.elements.databaseModal) {
+            this.elements.databaseModal.style.display = 'none';
+        }
+    }
+
+    /**
+     * Load database stats
+     */
+    async loadDatabaseStats() {
+        try {
+            const response = await fetch('/api/database/stats');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayDatabaseStats(result.stats, result.recent_sessions);
+            } else {
+                throw new Error(result.error || 'Failed to load stats');
+            }
+        } catch (error) {
+            console.error('Error loading database stats:', error);
+            if (this.elements.statsGrid) {
+                this.elements.statsGrid.innerHTML = '<p>Error loading database statistics</p>';
+            }
+        }
+    }
+
+    /**
+     * Display database stats
+     */
+    displayDatabaseStats(stats, recentSessions) {
+        if (this.elements.statsGrid) {
+            this.elements.statsGrid.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-value">${stats.raw_transcripts}</div>
+                    <div class="stat-label">Raw Transcripts</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${stats.processed_transcripts}</div>
+                    <div class="stat-label">Processed Transcripts</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${stats.sessions}</div>
+                    <div class="stat-label">Sessions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${recentSessions.length}</div>
+                    <div class="stat-label">Active Sessions</div>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Show database table
+     */
+    async showDatabaseTable(tableType) {
+        // Update tab states
+        this.updateTabStates(tableType);
+
+        if (tableType === 'raw') {
+            await this.loadRawTranscripts();
+        } else if (tableType === 'processed') {
+            await this.loadProcessedTranscripts();
+        } else if (tableType === 'sessions') {
+            await this.loadRecentSessions();
+        }
+    }
+
+    /**
+     * Update tab states
+     */
+    updateTabStates(activeTab) {
+        const tabs = ['raw', 'processed', 'sessions', 'session-browser'];
+        tabs.forEach(tab => {
+            const tabElement = this.elements[`${tab.replace('-', '')}Tab`];
+            if (tabElement) {
+                if (tab === activeTab) {
+                    tabElement.classList.add('active');
+                } else {
+                    tabElement.classList.remove('active');
+                }
+            }
+        });
+    }
+
+    /**
+     * Load raw transcripts (simplified version)
+     */
+    async loadRawTranscripts() {
+        try {
+            const response = await fetch('/api/database/raw-transcripts?limit=20');
+            const result = await response.json();
+
+            if (response.ok) {
+                this.displayRawTranscripts(result.transcripts, result.pagination);
+            } else {
+                throw new Error(result.error || 'Failed to load raw transcripts');
+            }
+        } catch (error) {
+            console.error('Error loading raw transcripts:', error);
+            if (this.elements.tableContent) {
+                this.elements.tableContent.innerHTML = '<p>Error loading raw transcripts</p>';
+            }
+        }
+    }
+
+    /**
+     * Display raw transcripts (simplified version)
+     */
+    displayRawTranscripts(transcripts, pagination) {
+        if (!this.elements.tableContent) return;
+
+        if (transcripts.length === 0) {
+            this.elements.tableContent.innerHTML = '<p>No raw transcripts found</p>';
+            return;
+        }
+
+        let html = '<table class="database-table"><thead><tr><th>Timestamp</th><th>Source</th><th>Text</th></tr></thead><tbody>';
+        transcripts.forEach(transcript => {
+            html += `<tr>
+                <td>${new Date(transcript.timestamp).toLocaleString()}</td>
+                <td>${transcript.audio_source || 'unknown'}</td>
+                <td>${transcript.text}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+
+        this.elements.tableContent.innerHTML = html;
+    }
+
+    /**
+     * Load processed transcripts (placeholder)
+     */
+    async loadProcessedTranscripts() {
+        if (this.elements.tableContent) {
+            this.elements.tableContent.innerHTML = '<p>Processed transcripts view not implemented yet</p>';
+        }
+    }
+
+    /**
+     * Load recent sessions (placeholder)
+     */
+    async loadRecentSessions() {
+        if (this.elements.tableContent) {
+            this.elements.tableContent.innerHTML = '<p>Recent sessions view not implemented yet</p>';
         }
     }
 

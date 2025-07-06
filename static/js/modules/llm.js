@@ -75,9 +75,6 @@ class LLMModule extends ModuleBase {
         this.on('llm:manual_process_requested', () => this.processTranscriptsManually());
         this.on('llm:auto_processing_triggered', () => this.handleAutoProcessingTriggered());
 
-        // Listen for keyboard shortcuts from utils module
-        this.on('llm:manual_process_requested', () => this.processTranscriptsManually());
-
         // Listen for SSE events
         this.on('llm:sse_event', (data) => this.handleSSEEvent(data));
 

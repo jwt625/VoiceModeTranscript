@@ -235,11 +235,6 @@ class RecordingModule extends ModuleBase {
      */
     async stopRecording() {
         try {
-            if (!this.getState('isRecording')) {
-                console.warn('Not currently recording');
-                return;
-            }
-
             this.emit('ui:status_updated', { status: 'ready', message: 'Stopping...' });
             this.emit('ui:button_state_updated', { buttonId: 'stopBtn', disabled: true });
 
