@@ -43,16 +43,25 @@ uv sync
 ```
 
 ### 3. Build whisper.cpp
+
+Prerequisites
+- macOS with Xcode command line tools
+- Homebrew
+
 ```bash
 # Clone and build whisper.cpp
 git clone https://github.com/ggerganov/whisper.cpp.git
 cd whisper.cpp
-make clean
-make -j$(sysctl -n hw.ncpu)  # macOS
-# make -j$(nproc)  # Linux
-
-# Download model
-bash ./models/download-ggml-model.sh base.en
+brew install cmake
+# Build whisper.cpp
+cmake -B build
+cmake --build build -j --config Release
+# Download a model
+./models/download-ggml-model.sh base.en
+# Test installation
+./build/bin/whisper-cli -f samples/jfk.wav -m models/ggml-base.en.bin
+# Convert audio format first if needed
+ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le output.wav
 cd ..
 ```
 
