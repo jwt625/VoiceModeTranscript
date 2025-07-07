@@ -29,11 +29,11 @@ dependencies = [
     # Audio Processing
     "pyaudio==0.2.14",
     "pydub==0.25.1",
-    "numpy==1.24.3",
+    "numpy>1.24.3",
     # AI/ML
     "openai-whisper==20231117",
-    "torch==2.1.0",
-    "torchaudio==2.1.0",
+    "torch>=2.1.0",
+    "torchaudio>=2.1.0",
     "assemblyai[extras]==0.33.0",
     # Utilities
     "python-socketio==5.10.0",

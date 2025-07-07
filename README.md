@@ -37,9 +37,21 @@ git clone https://github.com/jwt625/Voice_Mode_transcript.git
 cd Voice_Mode_transcript
 ```
 
-### 2. Install Dependencies
+### 2. Setup Virtual Environment and Install Dependencies
+
+Create virtual environment:
+```bash
+uv venv
+```
+
+Install dependencies:
 ```bash
 uv sync
+```
+
+Activate virtual environment (optional, uv handles this automatically):
+```bash
+source .venv/bin/activate
 ```
 
 ### 3. Build whisper.cpp

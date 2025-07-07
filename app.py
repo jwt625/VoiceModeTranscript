@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import queue
+import socket
 import sqlite3
 import threading
 import time
@@ -2814,16 +2815,40 @@ def generate_session_summary_async(session_id):
     summary_thread.start()
 
 
+def find_available_port(start_port=5001, max_attempts=10):
+    """Find an available port starting from start_port"""
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            # Try to bind to the port to check if it's available
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('localhost', port))
+                return port
+        except OSError:
+            # Port is in use, try the next one
+            continue
+
+    # If no port found in range, raise an exception
+    raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts - 1}")
+
+
 if __name__ == "__main__":
     # Initialize database
     init_database()
 
-    print("🎯 ChatGPT Voice Mode Transcript Recorder")
-    print("=" * 50)
-    print("Starting Flask server with SSE...")
-    print("Open http://localhost:5001 in your browser")
-    print("SSE stream available at http://localhost:5001/stream")
-    print("=" * 50)
+    # Find an available port
+    try:
+        port = find_available_port(start_port=5001, max_attempts=10)
+        print("🎯 ChatGPT Voice Mode Transcript Recorder")
+        print("=" * 50)
+        print("Starting Flask server with SSE...")
+        print(f"Open http://localhost:{port} in your browser")
+        print(f"SSE stream available at http://localhost:{port}/stream")
+        print("=" * 50)
 
-    # Run the app (regular Flask, no SocketIO)
-    app.run(debug=True, host="0.0.0.0", port=5001, threaded=True)
+        # Run the app (regular Flask, no SocketIO)
+        app.run(debug=True, host="0.0.0.0", port=port, threaded=True)
+
+    except RuntimeError as e:
+        print(f"❌ Error starting server: {e}")
+        print("Please check that ports 5001-5010 are not all in use by other applications.")
+        exit(1)
