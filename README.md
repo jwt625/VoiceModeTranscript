@@ -54,28 +54,42 @@ Activate virtual environment (optional, uv handles this automatically):
 source .venv/bin/activate
 ```
 
-### 3. Build whisper.cpp
+### 3. Build whisper.cpp with SDL2 Support
 
-Prerequisites
+Prerequisites:
 - macOS with Xcode command line tools
 - Homebrew
+- SDL2 (required for streaming functionality)
 
 ```bash
-# Clone and build whisper.cpp
+# Install SDL2 for streaming support
+brew install sdl2 cmake
+
+# Clone and build whisper.cpp with SDL2 support
 git clone https://github.com/ggerganov/whisper.cpp.git
 cd whisper.cpp
-brew install cmake
-# Build whisper.cpp
-cmake -B build
-cmake --build build -j --config Release
+
+# Build with SDL2 support (required for whisper-stream)
+rm -rf build
+mkdir build
+cd build
+cmake .. -DWHISPER_SDL2=ON
+make -j8
+
 # Download a model
+cd ..
 ./models/download-ggml-model.sh base.en
-# Test installation
+
+# Test installation (non-streaming)
 ./build/bin/whisper-cli -f samples/jfk.wav -m models/ggml-base.en.bin
-# Convert audio format first if needed
-ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le output.wav
+
+# Test streaming functionality (required for the app)
+./build/bin/whisper-stream -m models/ggml-base.en.bin -t 6 --step 0 --length 30000 -vth 0.6
+
 cd ..
 ```
+
+**Important:** The app requires `whisper-stream` binary which is only built when SDL2 support is enabled. If you see "whisper-stream not found" errors, make sure you built with `-DWHISPER_SDL2=ON`.
 
 ### 4. Setup Audio (macOS)
 ```bash
@@ -97,7 +111,7 @@ echo 'LLM_API_KEY="your_lambda_labs_api_key_here"' > .env
 echo 'LLM_BASE_URL="https://api.lambda.ai/v1"' >> .env
 echo 'LLM_MODEL="llama-4-maverick-17b-128e-instruct-fp8"' >> .env
 echo 'WHISPER_MODEL_PATH="./whisper.cpp/models/ggml-base.en.bin"' >> .env
-echo 'WHISPER_EXECUTABLE="./whisper.cpp/main"' >> .env
+echo 'WHISPER_STREAM_BINARY="./whisper.cpp/build/bin/whisper-stream"' >> .env
 ```
 
 ## Running the App
@@ -106,12 +120,12 @@ echo 'WHISPER_EXECUTABLE="./whisper.cpp/main"' >> .env
 uv run python app.py
 ```
 
-Open your browser to: **http://localhost:5001**
+The server will automatically find an available port starting from 5001. Check the console output for the actual URL, typically: **http://localhost:5001** (or 5002, 5003, etc. if 5001 is in use)
 
 ## Usage
 
 ### Recording Workflow
-1. Open http://localhost:5001 in your browser
+1. Open the URL shown in the console (e.g., http://localhost:5001) in your browser
 2. Select microphone and system audio devices
 3. Click "Start Recording"
 4. Speak into your microphone → raw transcripts appear in left panel

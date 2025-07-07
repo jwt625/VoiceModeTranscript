@@ -295,7 +295,8 @@ class AudioCapture:
             # Normalize to 0-1 range (assuming 16-bit audio)
             normalized_level = min(rms / 32767.0, 1.0)
 
-            return normalized_level
+            # Convert numpy float32 to regular Python float for JSON serialization
+            return float(normalized_level)
 
         except Exception as e:
             print(f"Error calculating audio level: {e}")

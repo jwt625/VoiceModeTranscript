@@ -200,15 +200,15 @@ class WhisperCppClient:
             return {
                 "text": text,
                 "confidence": confidence,
-                "processing_time": processing_time,
+                "processing_time": float(processing_time),
                 "language": whisper_result.get("language", "unknown"),
                 "detected_language": whisper_result.get("detected_language", "unknown"),
-                "detected_language_probability": whisper_result.get(
+                "detected_language_probability": float(whisper_result.get(
                     "detected_language_probability", 0.0
-                ),
+                )),
                 "is_final": True,
                 "segments": segments,
-                "duration": whisper_result.get("duration", 0.0),
+                "duration": float(whisper_result.get("duration", 0.0)),
             }
 
         except Exception as e:
@@ -216,7 +216,7 @@ class WhisperCppClient:
             return {
                 "text": whisper_result.get("text", "").strip(),
                 "confidence": 0.5,
-                "processing_time": processing_time,
+                "processing_time": float(processing_time),
                 "language": "unknown",
                 "is_final": True,
                 "segments": [],
@@ -254,7 +254,7 @@ class WhisperCppClient:
                     total_duration += duration
 
                 if total_duration > 0:
-                    return total_confidence / total_duration
+                    return float(total_confidence / total_duration)
 
             # Fallback: estimate based on text characteristics
             text = whisper_result.get("text", "").strip()
