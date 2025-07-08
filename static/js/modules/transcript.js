@@ -260,6 +260,17 @@ class TranscriptModule extends ModuleBase {
         const item = document.createElement('div');
         item.className = 'raw-transcript-item';
 
+        // Add source-specific CSS class for border color
+        item.classList.add(`source-${data.audio_source}`);
+
+        // Determine prefix based on audio source
+        let prefix = '';
+        if (data.audio_source === 'microphone') {
+            prefix = '[USER] ';
+        } else if (data.audio_source === 'system') {
+            prefix = '[ASSISTANT] ';
+        }
+
         item.innerHTML = `
             <div class="transcript-header">
                 <div class="timestamp">${new Date(data.timestamp).toLocaleTimeString()}</div>
@@ -269,7 +280,7 @@ class TranscriptModule extends ModuleBase {
                 </div>
                 <div class="sequence">#${data.sequence_number}</div>
             </div>
-            <div class="text">${data.text}</div>
+            <div class="text">${prefix}${data.text}</div>
         `;
 
         this.elements.rawTranscriptContent.appendChild(item);
@@ -499,7 +510,16 @@ class TranscriptModule extends ModuleBase {
         const formattedText = rawTranscripts.map(transcript => {
             const timestamp = new Date(transcript.timestamp).toLocaleTimeString();
             const source = transcript.audio_source === 'microphone' ? '🎤' : '🔊';
-            return `[${timestamp}] ${source} ${transcript.text}`;
+
+            // Add prefix based on audio source
+            let prefix = '';
+            if (transcript.audio_source === 'microphone') {
+                prefix = '[USER] ';
+            } else if (transcript.audio_source === 'system') {
+                prefix = '[ASSISTANT] ';
+            }
+
+            return `[${timestamp}] ${source} ${prefix}${transcript.text}`;
         }).join('\n');
 
         // Copy to clipboard using utils module
