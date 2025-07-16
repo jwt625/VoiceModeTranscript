@@ -1,5 +1,7 @@
 # Voxtral-Mini-3B-2507 Testing Environment
 
+> ⚠️ **Current Status:** vLLM 0.9.2 doesn't fully support Voxtral models yet. The model downloads successfully but fails to load due to missing audio components (`mm_whisper_embeddings`). This is expected to be resolved in future vLLM releases.
+
 This directory contains a complete testing setup for **Voxtral-Mini-3B-2507**, Mistral AI's new audio-text-to-text model with transcription and understanding capabilities.
 
 ## 🎯 What is Voxtral?
@@ -126,6 +128,20 @@ python test_voxtral_understanding.py
 - Language detection
 - Q&A with audio context
 
+### 🌐 Alternative: Test with Mistral API
+Since local vLLM support isn't ready yet, you can test Voxtral via Mistral's hosted API:
+
+```bash
+# Setup (one time)
+python test_mistral_api.py --setup
+
+# Set API key
+export MISTRAL_API_KEY='your_api_key_here'
+
+# Test transcription and understanding
+python test_mistral_api.py
+```
+
 ## 📁 File Structure
 
 ```
@@ -134,9 +150,10 @@ voxtral_test/
 ├── download_model.py              # Manual model download script
 ├── setup_hf_auth.py              # Hugging Face authentication setup helper
 ├── test_setup.py                  # Dependency and setup verification
-├── start_voxtral_server.py        # vLLM server startup script
-├── test_voxtral_transcription.py  # Basic transcription testing
-├── test_voxtral_understanding.py  # Advanced audio understanding tests
+├── start_voxtral_server.py        # vLLM server startup script (currently limited)
+├── test_voxtral_transcription.py  # Basic transcription testing (currently limited)
+├── test_voxtral_understanding.py  # Advanced audio understanding tests (currently limited)
+├── test_mistral_api.py            # Alternative: Test via Mistral API (working)
 ├── VOXTRAL_README.md             # Detailed technical documentation
 └── models/                        # Local model storage (created by download_model.py)
     └── voxtral-mini-3b/           # Model files go here
@@ -206,6 +223,18 @@ voxtral_test/
 | **Integration** | Direct binary | API server |
 
 ## 🚨 Troubleshooting
+
+### ⚠️ Current Limitation: vLLM Support
+**Status:** vLLM 0.9.2 doesn't fully support Voxtral models yet
+
+**Error:** `ValueError: There is no module or parameter named 'mm_whisper_embeddings' in LlamaForCausalLM`
+
+**Cause:** The audio components of Voxtral models aren't recognized by current vLLM versions
+
+**Solutions:**
+1. **Wait for vLLM update** - Voxtral support is likely coming in future releases
+2. **Use Mistral API** - Access Voxtral through https://console.mistral.ai/
+3. **Use transformers library** - Direct model loading (more complex setup)
 
 ### Authentication Error (401 Unauthorized)
 **Most common issue:** Missing Hugging Face token
