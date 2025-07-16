@@ -89,7 +89,7 @@ The tests use the JFK sample from whisper.cpp:
 
 Voxtral supports 8 languages:
 - 🇺🇸 English
-- 🇪🇸 Spanish  
+- 🇪🇸 Spanish
 - 🇫🇷 French
 - 🇵🇹 Portuguese
 - 🇮🇳 Hindi

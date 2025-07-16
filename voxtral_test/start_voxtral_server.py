@@ -5,9 +5,10 @@ Script to start Voxtral-Mini-3B-2507 vLLM server
 
 import subprocess
 import sys
-import time
-import requests
 from pathlib import Path
+
+import requests
+
 
 def check_server_status(base_url="http://localhost:8000"):
     """Check if vLLM server is running"""
@@ -17,9 +18,11 @@ def check_server_status(base_url="http://localhost:8000"):
     except:
         return False
 
+
 def check_hf_authentication():
     """Check if Hugging Face authentication is set up"""
     import os
+
     hf_token = os.getenv("HF_TOKEN")
     if hf_token:
         print(f"✅ HF_TOKEN found (length: {len(hf_token)})")
@@ -27,6 +30,7 @@ def check_hf_authentication():
     else:
         print("❌ HF_TOKEN not found")
         return False
+
 
 def print_authentication_help():
     """Print help for setting up Hugging Face authentication"""
@@ -42,6 +46,7 @@ def print_authentication_help():
     print("\n🔄 Alternative: Login via CLI")
     print("   huggingface-cli login")
     print("\n💡 Then restart this script")
+
 
 def check_local_model():
     """Check if local model exists"""
@@ -60,6 +65,7 @@ def check_local_model():
         return False, f"Missing files: {', '.join(missing_files)}"
 
     return True, str(local_model_path.absolute())
+
 
 def start_voxtral_server():
     """Start the Voxtral vLLM server"""
@@ -100,19 +106,27 @@ def start_voxtral_server():
 
     # vLLM command
     cmd = [
-        "vllm", "serve",
+        "vllm",
+        "serve",
         model_path,
-        "--tokenizer_mode", "mistral",
-        "--config_format", "mistral",
-        "--load_format", "mistral"
+        "--tokenizer_mode",
+        "mistral",
+        "--config_format",
+        "mistral",
+        "--load_format",
+        "mistral",
     ]
 
     print(f"\n🔧 Command: {' '.join(cmd)}")
 
     if use_local:
-        print("\n⏳ Starting server with local model (this may take 1-2 minutes to load)...")
+        print(
+            "\n⏳ Starting server with local model (this may take 1-2 minutes to load)..."
+        )
     else:
-        print("\n⏳ Starting server (this may take a few minutes to download and load the model)...")
+        print(
+            "\n⏳ Starting server (this may take a few minutes to download and load the model)..."
+        )
 
     try:
         # Start the server
@@ -121,7 +135,7 @@ def start_voxtral_server():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            bufsize=1
+            bufsize=1,
         )
 
         print("🔄 Server starting...")
@@ -130,11 +144,14 @@ def start_voxtral_server():
         startup_complete = False
         auth_error_detected = False
 
-        for line in iter(process.stdout.readline, ''):
+        for line in iter(process.stdout.readline, ""):
             print(f"[SERVER] {line.rstrip()}")
 
             # Check for authentication errors (only relevant for remote models)
-            if not use_local and ("401 Client Error: Unauthorized" in line or "Invalid credentials" in line):
+            if not use_local and (
+                "401 Client Error: Unauthorized" in line
+                or "Invalid credentials" in line
+            ):
                 auth_error_detected = True
 
             # Check for startup completion indicators
@@ -171,13 +188,16 @@ def start_voxtral_server():
 
     except FileNotFoundError:
         print("❌ vLLM not found. Make sure it's installed:")
-        print("   uv pip install -U \"vllm[audio]\" --prerelease=allow --index-strategy unsafe-best-match --extra-index-url https://wheels.vllm.ai/nightly")
+        print(
+            '   uv pip install -U "vllm[audio]" --prerelease=allow --index-strategy unsafe-best-match --extra-index-url https://wheels.vllm.ai/nightly'
+        )
     except KeyboardInterrupt:
         print("\n🛑 Server startup cancelled")
     except Exception as e:
         print(f"❌ Error starting server: {e}")
         if "401" in str(e) or "Unauthorized" in str(e):
             print_authentication_help()
+
 
 def show_usage():
     """Show usage instructions"""
@@ -190,6 +210,7 @@ def show_usage():
     print("   - vLLM with audio support installed")
     print("   - mistral_common[audio] installed")
     print("   - ~9.5 GB available GPU memory")
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--help":

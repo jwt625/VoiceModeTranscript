@@ -158,7 +158,7 @@ voxtral_test/
 
 ### ✅ Setup Verification (test_setup.py)
 - vLLM 0.9.2: ✅ Available
-- mistral_common 1.8.0: ✅ Available  
+- mistral_common 1.8.0: ✅ Available
 - Audio loading: ✅ JFK sample loads (11.0s duration)
 - Request creation: ✅ Both transcription and understanding requests work
 - Timeout handling: ✅ Fixed - no more hanging on server checks
@@ -175,7 +175,7 @@ voxtral_test/
 
 **Supported Languages:**
 - 🇺🇸 English (tested with JFK sample)
-- 🇪🇸 Spanish  
+- 🇪🇸 Spanish
 - 🇫🇷 French
 - 🇵🇹 Portuguese
 - 🇮🇳 Hindi
@@ -253,7 +253,7 @@ python -c "from mistral_common.audio import Audio; Audio.from_file('../whisper.c
 After successful testing, you could:
 
 1. **Compare accuracy** with your current whisper.cpp setup
-2. **Evaluate understanding features** for enhanced transcript processing  
+2. **Evaluate understanding features** for enhanced transcript processing
 3. **Test real-time performance** for live transcription
 4. **Integrate into Voice Mode app** as alternative transcription backend
 5. **Explore function calling** capabilities for voice-driven workflows
