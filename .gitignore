@@ -299,3 +299,4 @@ yarn-error.log*
 
 # Compiled whisper.cpp binaries and entire directory
 whisper.cpp/
+voxtral_test/models/*
