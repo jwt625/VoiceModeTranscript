@@ -290,9 +290,9 @@ class WhisperStreamProcessor:
             cmd.extend(
                 [
                     "--step",
-                    "10000",  # 10 second step interval
+                    "20000",  # 10 second step interval
                     "--length",
-                    "15000",  # 10 second window (no overlap)
+                    "30000",  # 10 second window (no overlap)
                 ]
             )
             print(
@@ -565,6 +565,10 @@ class WhisperStreamProcessor:
         if re.match(r"^main:\s", line_stripped):
             return False
 
+        # Skip init messages
+        if re.match(r"^init:\s", line_stripped):
+            return False
+
         # Skip whisper debug messages
         if re.match(r"^whisper_", line_stripped):
             return False
@@ -585,7 +589,7 @@ class WhisperStreamProcessor:
         if len(line_stripped) < 10:
             return False
 
-        return False
+        return True
 
     def _add_direct_transcript(self, line: str):
         """Process a direct transcript line from fixed interval mode"""
