@@ -1266,7 +1266,8 @@ def update_auto_processing_settings():
 
 # Global VAD settings state
 vad_settings = {
-    "use_fixed_interval": False  # Default to VAD mode
+    "use_fixed_interval": False,  # Default to VAD mode
+    "vad_threshold": 0.6  # Default VAD threshold
 }
 
 
@@ -1289,6 +1290,16 @@ def update_vad_settings():
 
         if "use_fixed_interval" in data:
             vad_settings["use_fixed_interval"] = bool(data["use_fixed_interval"])
+
+        if "vad_threshold" in data:
+            threshold = float(data["vad_threshold"])
+            # Validate threshold range (0.1 to 1.0)
+            if 0.1 <= threshold <= 1.0:
+                vad_settings["vad_threshold"] = threshold
+            else:
+                return jsonify(
+                    {"error": "VAD threshold must be between 0.1 and 1.0"}
+                ), 400
 
         return jsonify(
             {

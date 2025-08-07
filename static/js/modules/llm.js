@@ -42,7 +42,10 @@ class LLMModule extends ModuleBase {
                 processing: 0,
                 completed: 0,
                 failed: 0
-            }
+            },
+            // VAD settings
+            vadUseFixedInterval: false, // Default to VAD mode
+            vadThreshold: 0.6 // Default VAD threshold
         };
     }
 
@@ -107,6 +110,12 @@ class LLMModule extends ModuleBase {
         this.elements.autoProcessingInterval = document.getElementById('auto-processing-interval');
         this.elements.autoProcessingStatus = document.getElementById('auto-processing-status');
 
+        // VAD controls
+        this.elements.vadFixedInterval = document.getElementById('vad-fixed-interval');
+        this.elements.vadStatus = document.getElementById('vad-status');
+        this.elements.vadThresholdSlider = document.getElementById('vad-threshold-slider');
+        this.elements.vadThresholdValue = document.getElementById('vad-threshold-value');
+
         // Activity panel
         this.elements.llmActivity = document.getElementById('llm-activity');
         this.elements.currentJobInfo = document.getElementById('current-job-info');
@@ -138,6 +147,19 @@ class LLMModule extends ModuleBase {
                 await this.setAutoProcessingInterval(interval);
             });
         }
+
+        // VAD control event listeners
+        if (this.elements.vadFixedInterval) {
+            this.elements.vadFixedInterval.addEventListener('change', async () => {
+                await this.updateVADSettings();
+            });
+        }
+
+        if (this.elements.vadThresholdSlider) {
+            this.elements.vadThresholdSlider.addEventListener('input', async () => {
+                await this.updateVADSettings();
+            });
+        }
     }
 
     /**
@@ -146,6 +168,7 @@ class LLMModule extends ModuleBase {
     async initializeAutoProcessing() {
         // Load settings from server first
         await this.loadAutoProcessingSettings();
+        await this.loadVADSettings();
 
         // Update status display
         this.updateAutoProcessingStatus();
@@ -782,6 +805,111 @@ class LLMModule extends ModuleBase {
                 type: 'error',
                 message: 'Failed to update auto-processing settings'
             });
+        }
+    }
+
+    /**
+     * Load VAD settings from server
+     */
+    async loadVADSettings() {
+        try {
+            const response = await fetch('/api/vad-settings');
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+
+                // Update state
+                this.setState('vadUseFixedInterval', settings.use_fixed_interval);
+                this.setState('vadThreshold', settings.vad_threshold || 0.6);
+
+                // Update UI elements
+                if (this.elements.vadFixedInterval) {
+                    this.elements.vadFixedInterval.checked = settings.use_fixed_interval;
+                }
+                if (this.elements.vadThresholdSlider) {
+                    this.elements.vadThresholdSlider.value = settings.vad_threshold || 0.6;
+                }
+                if (this.elements.vadThresholdValue) {
+                    this.elements.vadThresholdValue.textContent = (settings.vad_threshold || 0.6).toFixed(1);
+                }
+
+                this.updateVADStatus(settings);
+
+                if (this.debugMode) {
+                    console.log('🎚️ VAD settings loaded:', settings);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading VAD settings:', error);
+        }
+    }
+
+    /**
+     * Update VAD settings on server
+     */
+    async updateVADSettings() {
+        try {
+            const useFixedInterval = this.elements.vadFixedInterval ? this.elements.vadFixedInterval.checked : false;
+            const vadThreshold = this.elements.vadThresholdSlider ? parseFloat(this.elements.vadThresholdSlider.value) : 0.6;
+
+            // Update threshold display
+            if (this.elements.vadThresholdValue) {
+                this.elements.vadThresholdValue.textContent = vadThreshold.toFixed(1);
+            }
+
+            const response = await fetch('/api/vad-settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    use_fixed_interval: useFixedInterval,
+                    vad_threshold: vadThreshold
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                const settings = result.settings;
+
+                // Update local state
+                this.setState('vadUseFixedInterval', settings.use_fixed_interval);
+                this.setState('vadThreshold', settings.vad_threshold);
+
+                this.updateVADStatus(settings);
+
+                this.emit('ui:notification', {
+                    type: 'info',
+                    message: `VAD settings updated: ${settings.use_fixed_interval ? 'Fixed Intervals' : 'VAD Mode'}, Threshold: ${settings.vad_threshold}`
+                });
+
+                if (this.debugMode) {
+                    console.log('🎚️ VAD settings updated:', settings);
+                }
+            } else {
+                throw new Error(result.error || 'Failed to update VAD settings');
+            }
+        } catch (error) {
+            console.error('Error updating VAD settings:', error);
+            this.emit('ui:notification', {
+                type: 'error',
+                message: 'Failed to update VAD settings'
+            });
+        }
+    }
+
+    /**
+     * Update VAD status display
+     */
+    updateVADStatus(settings) {
+        if (!this.elements.vadStatus) return;
+
+        if (settings.use_fixed_interval) {
+            this.elements.vadStatus.textContent = 'Fixed Intervals (10s)';
+        } else {
+            this.elements.vadStatus.textContent = `VAD Mode (${settings.vad_threshold || 0.6})`;
         }
     }
 }

@@ -281,35 +281,36 @@ class WhisperStreamProcessor:
             "6",  # 6 threads
         ]
 
+        # Get VAD threshold from config (default to 0.6 if not specified)
+        vad_threshold = str(self.vad_config.get("vad_threshold", 0.6))
+
         # Configure VAD vs Fixed Interval mode
-        if self.vad_config.get("use_fixed_interval", False):
-            # Fixed interval mode: 10s intervals, 25s duration (15s overlap for better context)
+        if self.vad_config["use_fixed_interval"]:
+            # Fixed interval mode: process every 10s with no overlap (for continuous audio)
             cmd.extend(
                 [
                     "--step",
                     "10000",  # 10 second step interval
                     "--length",
-                    "25000",  # 25 second window
-                    "-vth",
-                    "0.6",  # VAD threshold (still used for quality)
+                    "15000",  # 10 second window (no overlap)
                 ]
             )
             print(
-                "🔄 Using Fixed Interval mode: 10s intervals, 25s duration (15s overlap)"
+                f"🔄 Using Fixed Interval mode: 10s intervals, 10s window (no overlap)"
             )
         else:
-            # VAD mode (default)
+            # VAD mode (default): voice activity detection with sliding window
             cmd.extend(
                 [
                     "--step",
                     "0",  # Enable sliding window mode with VAD
                     "--length",
-                    "30000",  # 30 second window
+                    "30000",  # 30 second window for context
                     "-vth",
-                    "0.6",  # VAD threshold
+                    vad_threshold,  # VAD threshold for voice detection
                 ]
             )
-            print("🎯 Using VAD mode: voice activity detection")
+            print(f"🎯 Using VAD mode: voice activity detection, threshold: {vad_threshold}")
 
         # Add keep parameter for context
         cmd.extend(["--keep", "200"])
